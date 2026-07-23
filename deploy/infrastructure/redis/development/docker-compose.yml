@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  shared-redis:
+    image: redis:7-alpine
+    container_name: graph-redis
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - graph-network
+
+volumes:
+  redis_data:
+
+networks:
+  graph-network:
+    driver: bridge

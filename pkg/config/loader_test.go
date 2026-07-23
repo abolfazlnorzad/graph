@@ -182,7 +182,7 @@ func TestLoad_CustomCallback(t *testing.T) {
 }
 
 func TestLoad_EmptyYamlPath(t *testing.T) {
-	t.Setenv("EYP_NAME", "vira")
+	t.Setenv("EYP_NAME", "graph")
 
 	var cfg struct {
 		Name string `koanf:"name"`
@@ -197,8 +197,8 @@ func TestLoad_EmptyYamlPath(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if cfg.Name != "vira" {
-		t.Errorf("Name = %q, want %q", cfg.Name, "vira")
+	if cfg.Name != "graph" {
+		t.Errorf("Name = %q, want %q", cfg.Name, "graph")
 	}
 }
 
