@@ -9,5 +9,5 @@ const (
 	ErrNotFound         Key = "error.not_found"
 	ErrUnauthorized     Key = "error.unauthorized"
 	ErrFieldIsRequired  Key = "error.field_is_required"
-	ErrValidationFailed     = "error.validation_failed"
+	ErrValidationFailed Key = "error.validation_failed"
 )

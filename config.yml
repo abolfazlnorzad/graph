@@ -1,0 +1,8 @@
+logger:
+  level: info
+  file_path: logs/app.log
+  use_local_time: true
+  file_max_size_in_mb: 100
+  file_max_age_in_days: 7
+
+
