@@ -2,6 +2,8 @@ package entity
 
 import (
 	"time"
+
+	"github.com/abolfazlnorzad/graph/pkg/types"
 )
 
 type TaskStatus string
@@ -17,16 +19,16 @@ const (
 )
 
 type Task struct {
-	ID          int64
+	ID          types.ID
 	Title       string
 	Description *string
 	Status      TaskStatus
 	Assignee    *string
-	Version     int
+	Version     int16
 
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	DeletedAt   *time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt *time.Time
 }
 
 func (s TaskStatus) IsValid() bool {
@@ -46,8 +48,8 @@ const (
 )
 
 type TaskAuditLog struct {
-	ID            int64
-	TaskID        int64
+	ID            types.ID
+	TaskID        types.ID
 	Action        TaskAction
 	PreviousState map[string]any
 	NewState      map[string]any
