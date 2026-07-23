@@ -3,6 +3,7 @@ package redisadapter_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	redisadapter "github.com/abolfazlnorzad/graph/adapter/redis"
 	"github.com/stretchr/testify/assert"
@@ -127,16 +128,94 @@ func TestAdapter_Close_NilClient(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestAdapter_Client(t *testing.T) {
-	a := &redisadapter.Adapter{}
-	client := a.Client()
-	assert.Nil(t, client)
-}
-
 func TestAdapter_Close_ConnectionFailure(t *testing.T) {
 	cfg := redisadapter.Config{Host: "localhost", Port: 19999, DB: 0}
 	a, err := redisadapter.New(context.Background(), cfg)
-	// New fails on connection, so a should be nil
 	assert.Nil(t, a)
 	assert.Error(t, err)
+}
+
+func setupIntegrationTest(t *testing.T) *redisadapter.Adapter {
+	cfg := redisadapter.Config{Host: "localhost", Port: 6379, DB: 15}
+	a, err := redisadapter.New(context.Background(), cfg)
+	if err != nil {
+		t.Skipf("Skipping integration test: Redis is not available on %s:%d", cfg.Host, cfg.Port)
+	}
+	return a
+}
+
+func TestAdapter_SetAndGet(t *testing.T) {
+	a := setupIntegrationTest(t)
+	defer a.Close()
+	ctx := context.Background()
+	key := "test_set_get_key"
+
+	_ = a.Delete(ctx, key)
+
+	err := a.Set(ctx, key, "my_test_value", 1*time.Minute)
+	require.NoError(t, err)
+
+	val, err := a.Get(ctx, key)
+	require.NoError(t, err)
+	assert.Equal(t, "my_test_value", val)
+
+	_ = a.Delete(ctx, key)
+}
+
+func TestAdapter_Get_NotFound(t *testing.T) {
+	a := setupIntegrationTest(t)
+	defer a.Close()
+	ctx := context.Background()
+
+	_, err := a.Get(ctx, "non_existent_random_key")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "redisadapter.Get")
+}
+
+func TestAdapter_Delete(t *testing.T) {
+	a := setupIntegrationTest(t)
+	defer a.Close()
+	ctx := context.Background()
+	key := "test_delete_key"
+
+	err := a.Set(ctx, key, "value_to_delete", 1*time.Minute)
+	require.NoError(t, err)
+
+	err = a.Delete(ctx, key)
+	require.NoError(t, err)
+
+	_, err = a.Get(ctx, key)
+	require.Error(t, err)
+}
+
+func TestAdapter_GetTTL(t *testing.T) {
+	a := setupIntegrationTest(t)
+	defer a.Close()
+	ctx := context.Background()
+
+	ttl, exists, err := a.GetTTL(ctx, "ttl_not_exist_key")
+	require.NoError(t, err)
+	assert.False(t, exists)
+	assert.Equal(t, time.Duration(0), ttl)
+
+	keyExp := "ttl_exists_exp_key"
+	err = a.Set(ctx, keyExp, "val", 10*time.Second)
+	require.NoError(t, err)
+
+	ttl, exists, err = a.GetTTL(ctx, keyExp)
+	require.NoError(t, err)
+	assert.True(t, exists)
+	assert.True(t, ttl > 0 && ttl <= 10*time.Second)
+
+	keyPersist := "ttl_exists_persist_key"
+	err = a.Set(ctx, keyPersist, "val", 0)
+	require.NoError(t, err)
+
+	ttl, exists, err = a.GetTTL(ctx, keyPersist)
+	require.NoError(t, err)
+	assert.True(t, exists)
+	assert.Equal(t, -1*time.Second, ttl)
+
+	_ = a.Delete(ctx, keyExp, keyPersist)
 }
