@@ -1,3 +1,9 @@
+// @title           Graph Task Management API
+// @version         1.0
+// @description     REST API for managing tasks (CRUD operations)
+// @host            localhost:8080
+// @BasePath        /
+// @schemes         http
 package main
 
 import (
@@ -6,7 +12,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/abolfazlnorzad/graph/adapter/appmetrics"
 	"github.com/abolfazlnorzad/graph/delivery/httpserver"
 	"github.com/abolfazlnorzad/graph/delivery/httpserver/taskhandler"
 	pgdb "github.com/abolfazlnorzad/graph/pkg/postgresdb"
@@ -20,6 +28,8 @@ import (
 	"github.com/abolfazlnorzad/graph/pkg/logger"
 	"github.com/abolfazlnorzad/graph/pkg/metric"
 	"github.com/abolfazlnorzad/graph/pkg/trace"
+
+	_ "github.com/abolfazlnorzad/graph/docs"
 )
 
 func main() {
@@ -80,24 +90,39 @@ func main() {
 	taskRepo := postgres.NewTaskRepo(db, log)
 	cacheStore := redisrepo.NewAdapter(redisClient)
 
-	// 8. Init service
-	vld := validation.NewValidator()
-	svc := service.NewService(taskRepo, cacheStore, log, nil, vld)
+	// 8. Init metrics adapter
+	appMtr, err := appmetrics.NewAppMetrics(meterMgr.Meter())
+	if err != nil {
+		log.Error("failed to init app metrics", slog.Any("error", err))
+		os.Exit(1)
+	}
 
-	// 9. Init handler & server
+	// 9. Init service
+	vld := validation.NewValidator()
+	svc := service.NewService(taskRepo, cacheStore, log, appMtr, vld)
+
+	// 10. Init handler & server
 	handler := taskhandler.NewHandler(svc)
 	srv := httpserver.New(cfg, log, handler)
 
-	// 10. Graceful shutdown
+	// 11. Start server in a background goroutine
+	go func() {
+		srv.Serve()
+	}()
+
+	// 12. Graceful Shutdown Mechanism
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-	go func() {
-		<-quit
-		log.Info("shutting down...")
-		srv.Shutdown(ctx)
-	}()
+	<-quit
+	log.Info("received shutdown signal, initiating graceful shutdown...")
 
-	// 11. Start server
-	srv.Serve()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Error("server forced to shutdown", slog.Any("error", err))
+	}
+
+	log.Info("server exited gracefully. cleaning up resources...")
 }

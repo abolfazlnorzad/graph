@@ -12,6 +12,8 @@ import (
 	"github.com/abolfazlnorzad/graph/pkg/config"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 type Server struct {
@@ -41,6 +43,7 @@ func (s *Server) Serve() {
 	s.Router.Use(gin.Recovery())
 
 	s.Router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	s.Router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	s.handler.SetRoutes(s.Router)
 
 	address := fmt.Sprintf(":%d", s.config.HTTPServer.Port)

@@ -10,10 +10,8 @@ logger:
 
 metric:
   enabled: true
-  exporter: "otlp"
-  endpoint: "localhost:4317"
+  exporter: "prometheus"
   service_name: "graph"
-  interval: 10s
 
 trace:
   enabled: true

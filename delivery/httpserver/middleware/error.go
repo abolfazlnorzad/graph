@@ -54,6 +54,7 @@ func ErrorHandler() gin.HandlerFunc {
 
 func ErrorResponse(c *gin.Context, err error) {
 	c.Error(err)
+	c.Abort()
 }
 
 func JSONResponse(c *gin.Context, code int, data any) {
