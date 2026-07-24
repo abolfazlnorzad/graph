@@ -40,6 +40,24 @@ func (_m *CacheStore) Delete(ctx context.Context, keys ...string) error {
 	return r0
 }
 
+// DeleteByPrefix provides a mock function with given fields: ctx, prefix
+func (_m *CacheStore) DeleteByPrefix(ctx context.Context, prefix string) error {
+	ret := _m.Called(ctx, prefix)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteByPrefix")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = rf(ctx, prefix)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // Get provides a mock function with given fields: ctx, key, dest
 func (_m *CacheStore) Get(ctx context.Context, key string, dest interface{}) error {
 	ret := _m.Called(ctx, key, dest)
