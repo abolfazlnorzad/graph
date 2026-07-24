@@ -2,6 +2,7 @@ package redisadapter
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -109,25 +110,33 @@ func (a *Adapter) Set(ctx context.Context, key string, value any, expiration tim
 	return nil
 }
 
-func (a *Adapter) Get(ctx context.Context, key string) (string, error) {
+func (a *Adapter) Get(ctx context.Context, key string, dest any) error {
 	const OP = "redisadapter.Get"
 
 	res, err := a.client.Get(ctx, key).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return "", richerror.New(OP).
+			return richerror.New(OP).
 				WithKind(richerror.KindNotFound).
 				WithUserMsgKey(msg.ErrNotFound).
 				WithErr(err)
 		}
 
-		return "", richerror.New(OP).
+		return richerror.New(OP).
 			WithErr(err).
 			WithKind(richerror.KindUnexpected).
 			WithUserMsgKey(msg.ErrUnexpected)
 	}
 
-	return res, nil
+	err = json.Unmarshal([]byte(res), dest)
+	if err != nil {
+		return richerror.New(OP).
+			WithErr(err).
+			WithKind(richerror.KindUnexpected).
+			WithMessage("failed to unmarshal cache data")
+	}
+
+	return nil
 }
 
 func (a *Adapter) Delete(ctx context.Context, keys ...string) error {

@@ -454,3 +454,193 @@ func TestService_UpdateTask(t *testing.T) {
 		mockCache.AssertNotCalled(t, "Delete")
 	})
 }
+
+func TestService_GetTask(t *testing.T) {
+	nopLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	vld := validation.NewValidator()
+
+	t.Run("Success - Cache hit with valid data", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		cachedTask := entity.Task{
+			ID:      1,
+			Title:   "Cached Task",
+			Status:  entity.StatusTodo,
+			Version: 1,
+		}
+
+		mockCache.On("Get", mock.Anything, "task:1", mock.AnythingOfType("*entity.Task")).
+			Run(func(args mock.Arguments) {
+				dest := args.Get(2).(*entity.Task)
+				*dest = cachedTask
+			}).Return(nil).Once()
+
+		mockMetrics.On("RecordTaskFetchedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskFetched", mock.Anything, "success", "cache").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.GetTask(context.Background(), param.GetTaskByIDRequest{ID: 1})
+
+		assert.NoError(t, err)
+		assert.Equal(t, entity.ID(1), resp.Task.ID)
+		assert.Equal(t, "Cached Task", resp.Task.Title)
+		assert.Equal(t, cachedTask.Status, resp.Task.Status)
+
+		mockRepo.AssertNotCalled(t, "GetTask")
+		mockMetrics.AssertExpectations(t)
+	})
+
+	t.Run("Fail - Cache penetration (cached not-found marker)", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		mockCache.On("Get", mock.Anything, "task:999", mock.AnythingOfType("*entity.Task")).
+			Run(func(args mock.Arguments) {
+				dest := args.Get(2).(*entity.Task)
+				*dest = entity.Task{ID: 0}
+			}).Return(nil).Once()
+
+		mockMetrics.On("RecordTaskFetchedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskFetched", mock.Anything, "fail", "cache_hit_not_found").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.GetTask(context.Background(), param.GetTaskByIDRequest{ID: 999})
+
+		assert.Error(t, err)
+		assert.Empty(t, resp)
+		assert.True(t, richerror.IsKind(err, richerror.KindNotFound))
+
+		mockRepo.AssertNotCalled(t, "GetTask")
+	})
+
+	t.Run("Success - Cache miss, DB hit, cache set", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		dbTask := entity.Task{
+			ID:      1,
+			Title:   "DB Task",
+			Status:  entity.StatusInProgress,
+			Version: 3,
+		}
+
+		mockCache.On("Get", mock.Anything, "task:1", mock.AnythingOfType("*entity.Task")).
+			Return(errors.New("cache miss")).Once()
+
+		mockRepo.On("GetTask", mock.Anything, entity.ID(1)).
+			Return(dbTask, nil).Once()
+
+		mockCache.On("Set", mock.Anything, "task:1", dbTask, 5*time.Minute).
+			Return(nil).Once()
+
+		mockMetrics.On("RecordTaskFetchedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskFetched", mock.Anything, "success", "db").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.GetTask(context.Background(), param.GetTaskByIDRequest{ID: 1})
+
+		assert.NoError(t, err)
+		assert.Equal(t, entity.ID(1), resp.Task.ID)
+		assert.Equal(t, "DB Task", resp.Task.Title)
+		assert.Equal(t, entity.StatusInProgress, resp.Task.Status)
+
+		mockRepo.AssertExpectations(t)
+		mockCache.AssertExpectations(t)
+	})
+
+	t.Run("Fail - Task not found (DB) caches not-found marker", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		mockCache.On("Get", mock.Anything, "task:999", mock.AnythingOfType("*entity.Task")).
+			Return(errors.New("cache miss")).Once()
+
+		notFoundErr := richerror.New("repo.GetTask").
+			WithKind(richerror.KindNotFound).
+			WithMessage("task not found")
+
+		mockRepo.On("GetTask", mock.Anything, entity.ID(999)).
+			Return(entity.Task{}, notFoundErr).Once()
+
+		mockCache.On("Set", mock.Anything, "task:999", entity.Task{ID: 0}, 1*time.Minute).
+			Return(nil).Once()
+
+		mockMetrics.On("RecordTaskFetchedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskFetched", mock.Anything, "fail", "db").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.GetTask(context.Background(), param.GetTaskByIDRequest{ID: 999})
+
+		assert.Error(t, err)
+		assert.Empty(t, resp)
+		assert.True(t, richerror.IsKind(err, richerror.KindNotFound))
+
+		mockCache.AssertExpectations(t)
+	})
+
+	t.Run("Fail - DB error", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		mockCache.On("Get", mock.Anything, "task:1", mock.AnythingOfType("*entity.Task")).
+			Return(errors.New("cache miss")).Once()
+
+		mockRepo.On("GetTask", mock.Anything, entity.ID(1)).
+			Return(entity.Task{}, errors.New("connection refused")).Once()
+
+		mockMetrics.On("RecordTaskFetchedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskFetched", mock.Anything, "fail", "db").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.GetTask(context.Background(), param.GetTaskByIDRequest{ID: 1})
+
+		assert.Error(t, err)
+		assert.Empty(t, resp)
+
+		mockCache.AssertNotCalled(t, "Set")
+	})
+
+	t.Run("Success - Cache set failure is best-effort", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		dbTask := entity.Task{
+			ID:      1,
+			Title:   "Task",
+			Status:  entity.StatusDone,
+			Version: 1,
+		}
+
+		mockCache.On("Get", mock.Anything, "task:1", mock.AnythingOfType("*entity.Task")).
+			Return(errors.New("cache miss")).Once()
+
+		mockRepo.On("GetTask", mock.Anything, entity.ID(1)).
+			Return(dbTask, nil).Once()
+
+		mockCache.On("Set", mock.Anything, "task:1", dbTask, 5*time.Minute).
+			Return(errors.New("redis down")).Once()
+
+		mockMetrics.On("RecordTaskFetchedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskFetched", mock.Anything, "success", "db").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.GetTask(context.Background(), param.GetTaskByIDRequest{ID: 1})
+
+		assert.NoError(t, err)
+		assert.Equal(t, entity.ID(1), resp.Task.ID)
+		assert.Equal(t, entity.StatusDone, resp.Task.Status)
+	})
+}
