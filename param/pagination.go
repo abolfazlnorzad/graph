@@ -11,9 +11,9 @@ type PaginationRequest struct {
 }
 
 type PaginationResponse struct {
-	PageSize   int `json:"page_size"`
-	PageNumber int `json:"page_number"`
-	Total      int `json:"total"`
+	PageSize   int   `json:"page_size"`
+	PageNumber int   `json:"page_number"`
+	Total      int64 `json:"total"`
 }
 
 func (p *PaginationRequest) GetPageNumber() int {

@@ -33,6 +33,11 @@ func (_m *Metrics) IncTaskFetched(ctx context.Context, status string, source str
 	_m.Called(ctx, status, source)
 }
 
+// IncTaskListed provides a mock function with given fields: ctx, status
+func (_m *Metrics) IncTaskListed(ctx context.Context, status string) {
+	_m.Called(ctx, status)
+}
+
 // IncTaskUpdated provides a mock function with given fields: ctx, status, reason
 func (_m *Metrics) IncTaskUpdated(ctx context.Context, status string, reason string) {
 	_m.Called(ctx, status, reason)
@@ -55,6 +60,11 @@ func (_m *Metrics) RecordTaskDeletedDuration(ctx context.Context, duration float
 
 // RecordTaskFetchedDuration provides a mock function with given fields: ctx, duration
 func (_m *Metrics) RecordTaskFetchedDuration(ctx context.Context, duration float64) {
+	_m.Called(ctx, duration)
+}
+
+// RecordTaskListedDuration provides a mock function with given fields: ctx, duration
+func (_m *Metrics) RecordTaskListedDuration(ctx context.Context, duration float64) {
 	_m.Called(ctx, duration)
 }
 

@@ -185,3 +185,28 @@ func (a *Adapter) GetTTL(ctx context.Context, key string) (time.Duration, bool, 
 
 	return ttl, true, nil
 }
+
+func (a *Adapter) DeleteByPrefix(ctx context.Context, prefix string) error {
+	var cursor uint64
+	var err error
+	var keys []string
+
+	for {
+		keys, cursor, err = a.client.Scan(ctx, cursor, prefix+"*", 100).Result()
+		if err != nil {
+			return err
+		}
+
+		if len(keys) > 0 {
+			if err := a.client.Unlink(ctx, keys...).Err(); err != nil {
+				return err
+			}
+		}
+
+		if cursor == 0 {
+			break
+		}
+	}
+
+	return nil
+}

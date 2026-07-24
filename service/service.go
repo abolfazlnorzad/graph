@@ -28,7 +28,7 @@ type Repository interface {
 	UpdateTask(ctx context.Context, t entity.Task) error
 	DeleteTask(ctx context.Context, id entity.ID) error
 	GetTask(ctx context.Context, id entity.ID) (entity.Task, error)
-	ListTask(ctx context.Context, criteria ListTaskCriteria) ([]entity.Task, error)
+	ListTask(ctx context.Context, criteria ListTaskCriteria) ([]entity.Task, int64, error)
 }
 
 //go:generate mockery --name=CacheStore --output=./mocks --outpkg=mocks
@@ -37,6 +37,7 @@ type CacheStore interface {
 	Get(ctx context.Context, key string, dest any) error
 	Delete(ctx context.Context, keys ...string) error
 	GetTTL(ctx context.Context, key string) (time.Duration, bool, error)
+	DeleteByPrefix(ctx context.Context, prefix string) error
 }
 
 //go:generate mockery --name=Metrics --output=./mocks --outpkg=mocks
@@ -51,6 +52,8 @@ type Metrics interface {
 	RecordTaskFetchedDuration(ctx context.Context, duration float64)
 	IncTaskDeleted(ctx context.Context, status string, reason string)
 	RecordTaskDeletedDuration(ctx context.Context, duration float64)
+	IncTaskListed(ctx context.Context, status string)
+	RecordTaskListedDuration(ctx context.Context, duration float64)
 }
 
 type Service struct {
@@ -125,7 +128,10 @@ func (s Service) CreateTask(ctx context.Context, req param.CreateTaskRequest) (p
 	if req.Assignee != nil {
 		span.SetAttributes(attribute.String("task.assignee", *req.Assignee))
 	}
-
+	if cErr := s.cache.DeleteByPrefix(ctx, "tasks:list:"); cErr != nil {
+		trace.RecordError(span, cErr)
+		reqLogger.WarnContext(ctx, "failed to invalidate tasks list cache", slog.Any("error", cErr))
+	}
 	if cErr := s.cache.Set(ctx, fmt.Sprintf("task:%d", t.ID), t, time.Minute*5); cErr != nil {
 		trace.RecordError(span, cErr)
 		reqLogger.ErrorContext(ctx, "failed to cache task", slog.Any("error", cErr))
@@ -213,7 +219,10 @@ func (s Service) UpdateTask(ctx context.Context, req param.UpdateTaskRequest) (p
 		reqLogger.ErrorContext(ctx, "failed to update task", slog.Any("error", err))
 		return param.UpdateTaskResponse{}, richerror.New(op).WithErr(err)
 	}
-
+	if cErr := s.cache.DeleteByPrefix(ctx, "tasks:list:"); cErr != nil {
+		trace.RecordError(span, cErr)
+		reqLogger.WarnContext(ctx, "failed to invalidate tasks list cache", slog.Any("error", cErr))
+	}
 	if cErr := s.cache.Delete(ctx, fmt.Sprintf("task:%d", existing.ID)); cErr != nil {
 		trace.RecordError(span, cErr)
 		reqLogger.ErrorContext(ctx, "failed to invalidate task cache", slog.Any("error", cErr))
@@ -311,11 +320,9 @@ func (s Service) DeleteTask(ctx context.Context, req param.DeleteTaskRequest) (p
 		slog.Int64("task_id", int64(req.ID)),
 	)
 
-
 	err := s.repo.DeleteTask(ctx, req.ID)
 	if err != nil {
 		trace.RecordError(span, err)
-
 
 		if richerror.IsKind(err, richerror.KindNotFound) {
 			s.mtr.IncTaskDeleted(ctx, "fail", "not_found")
@@ -335,6 +342,10 @@ func (s Service) DeleteTask(ctx context.Context, req param.DeleteTaskRequest) (p
 			WithErr(err)
 	}
 
+	if cErr := s.cache.DeleteByPrefix(ctx, "tasks:list:"); cErr != nil {
+		trace.RecordError(span, cErr)
+		reqLogger.WarnContext(ctx, "failed to invalidate tasks list cache", slog.Any("error", cErr))
+	}
 
 	cacheKey := fmt.Sprintf("task:%d", req.ID)
 	if cErr := s.cache.Delete(ctx, cacheKey); cErr != nil {
@@ -342,11 +353,84 @@ func (s Service) DeleteTask(ctx context.Context, req param.DeleteTaskRequest) (p
 		reqLogger.WarnContext(ctx, "failed to invalidate cache after deletion, data might be stale", slog.Any("error", cErr))
 	}
 
-
 	s.mtr.IncTaskDeleted(ctx, "success", "none")
 	s.mtr.DecTasksCount(ctx, "deleted", "user_action")
 
 	reqLogger.InfoContext(ctx, "task deleted successfully")
 
 	return param.DeleteTaskResponse{}, nil
+}
+
+func (s Service) ListTask(ctx context.Context, req param.ListTasksRequest) (param.ListTasksResponse, error) {
+	const op = "service.ListTask"
+	startTime := time.Now()
+
+	ctx, span := trace.Tracer().Start(ctx, op)
+	defer func() {
+		s.mtr.RecordTaskListedDuration(ctx, time.Since(startTime).Seconds())
+		span.End()
+	}()
+
+	reqLogger := s.logger.With(
+		slog.String("op", op),
+		slog.Int("page_number", req.Pagination.PageNumber),
+		slog.Int("page_size", req.Pagination.PageSize),
+	)
+
+	var statusStr, assigneeStr string
+	if req.Filter.Status != nil {
+		statusStr = string(*req.Filter.Status)
+	}
+	if req.Filter.Assignee != nil {
+		assigneeStr = *req.Filter.Assignee
+	}
+
+	cacheKey := fmt.Sprintf("tasks:list:page:%d:size:%d:status:%s:assignee:%s",
+		req.Pagination.PageNumber, req.Pagination.PageSize, statusStr, assigneeStr)
+
+	var cachedResp param.ListTasksResponse
+	if err := s.cache.Get(ctx, cacheKey, &cachedResp); err == nil {
+		s.mtr.IncTaskListed(ctx, "success_cache")
+		span.SetAttributes(attribute.Bool("cache.hit", true))
+		reqLogger.DebugContext(ctx, "tasks list fetched from cache")
+		return cachedResp, nil
+	}
+
+	span.SetAttributes(attribute.Bool("cache.hit", false))
+	criteria := ListTaskCriteria{
+		PageNumber: req.Pagination.PageNumber,
+		PageSize:   req.Pagination.PageSize,
+		Status:     req.Filter.Status,
+		Assignee:   req.Filter.Assignee,
+	}
+
+	tasks, total, err := s.repo.ListTask(ctx, criteria)
+	if err != nil {
+		s.mtr.IncTaskListed(ctx, "fail_db")
+		trace.RecordError(span, err)
+		reqLogger.ErrorContext(ctx, "failed to list tasks from db", slog.Any("error", err))
+		return param.ListTasksResponse{}, richerror.New(op).WithErr(err)
+	}
+
+	var respTasks []param.TaskResponse
+	for _, t := range tasks {
+		respTasks = append(respTasks, mapTaskEntityToTaskResponse(t))
+	}
+
+	resp := param.ListTasksResponse{
+		Tasks: respTasks,
+		Pagination: param.PaginationResponse{
+			PageSize:   req.Pagination.PageSize,
+			PageNumber: req.Pagination.PageNumber,
+			Total:      total,
+		},
+	}
+
+	if cErr := s.cache.Set(ctx, cacheKey, resp, time.Minute*2); cErr != nil {
+		trace.RecordError(span, cErr)
+		reqLogger.WarnContext(ctx, "failed to cache task list", slog.Any("error", cErr))
+	}
+
+	s.mtr.IncTaskListed(ctx, "success_db")
+	return resp, nil
 }
