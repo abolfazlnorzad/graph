@@ -10,8 +10,6 @@ import (
 
 type Kind int
 
-var ErrAlreadyRefunded = errors.New("execution already refunded")
-
 const (
 	KindInvalid      Kind = iota + 1 // (400)
 	KindForbidden                    //   (403)
