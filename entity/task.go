@@ -2,10 +2,9 @@ package entity
 
 import (
 	"time"
-
-	"github.com/abolfazlnorzad/graph/pkg/types"
 )
 
+type ID uint64
 type TaskStatus string
 
 const (
@@ -19,7 +18,7 @@ const (
 )
 
 type Task struct {
-	ID          types.ID
+	ID          ID
 	Title       string
 	Description *string
 	Status      TaskStatus
@@ -48,8 +47,8 @@ const (
 )
 
 type TaskAuditLog struct {
-	ID            types.ID
-	TaskID        types.ID
+	ID            ID
+	TaskID        ID
 	Action        TaskAction
 	PreviousState map[string]any
 	NewState      map[string]any

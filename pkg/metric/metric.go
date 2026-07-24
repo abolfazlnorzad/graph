@@ -3,7 +3,6 @@ package metric
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -15,12 +14,6 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
-var (
-	globalMeterProvider *sdkmetric.MeterProvider
-	globalMeter         metric.Meter
-	once                sync.Once
-)
-
 type Config struct {
 	Enabled     bool          `koanf:"enabled"`
 	Exporter    string        `koanf:"exporter"`
@@ -29,76 +22,69 @@ type Config struct {
 	Interval    time.Duration `koanf:"interval"`
 }
 
-func Init(cfg Config) error {
+type TelemetryManager struct {
+	provider *sdkmetric.MeterProvider
+	meter    metric.Meter
+}
+
+func New(cfg Config) (*TelemetryManager, error) {
 	if !cfg.Enabled {
-		return nil
+		return &TelemetryManager{
+			meter: otel.Meter("noop"),
+		}, nil
 	}
 
-	var initErr error
-	once.Do(func() {
-		res := resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceNameKey.String(cfg.ServiceName),
-		)
+	res := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String(cfg.ServiceName),
+	)
 
-		var reader sdkmetric.Reader
-		switch cfg.Exporter {
-		case "otlp":
-			exporter, expErr := otlpmetricgrpc.New(context.Background(),
-				otlpmetricgrpc.WithEndpoint(cfg.Endpoint),
-				otlpmetricgrpc.WithInsecure(),
-			)
-			if expErr != nil {
-				initErr = fmt.Errorf("failed to create OTLP metric exporter: %w", expErr)
-				return
-			}
-			if cfg.Interval > 0 {
-				reader = sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(cfg.Interval))
-			} else {
-				reader = sdkmetric.NewPeriodicReader(exporter)
-			}
-		case "prometheus":
-			promExporter, expErr := prometheus.New()
-			if expErr != nil {
-				initErr = fmt.Errorf("failed to create Prometheus metric exporter: %w", expErr)
-				return
-			}
-			reader = promExporter
-		default:
-			initErr = fmt.Errorf("unsupported metric exporter: %s", cfg.Exporter)
-			return
+	var reader sdkmetric.Reader
+	switch cfg.Exporter {
+	case "otlp":
+		exporter, err := otlpmetricgrpc.New(context.Background(),
+			otlpmetricgrpc.WithEndpoint(cfg.Endpoint),
+			otlpmetricgrpc.WithInsecure(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create OTLP exporter: %w", err)
 		}
 
-		mp := sdkmetric.NewMeterProvider(
-			sdkmetric.WithReader(reader),
-			sdkmetric.WithResource(res),
-		)
-
-		globalMeterProvider = mp
-		globalMeter = mp.Meter(cfg.ServiceName)
-
-		otel.SetMeterProvider(mp)
-	})
-
-	return initErr
-}
-
-func Meter() metric.Meter {
-	if globalMeter == nil {
-		return otel.Meter("noop")
+		if cfg.Interval > 0 {
+			reader = sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(cfg.Interval))
+		} else {
+			reader = sdkmetric.NewPeriodicReader(exporter)
+		}
+	case "prometheus":
+		promExporter, err := prometheus.New()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Prometheus exporter: %w", err)
+		}
+		reader = promExporter
+	default:
+		return nil, fmt.Errorf("unsupported metric exporter: %s", cfg.Exporter)
 	}
-	return globalMeter
+
+	mp := sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(reader),
+		sdkmetric.WithResource(res),
+	)
+
+	otel.SetMeterProvider(mp)
+
+	return &TelemetryManager{
+		provider: mp,
+		meter:    mp.Meter(cfg.ServiceName),
+	}, nil
 }
 
-func Close() error {
-	if globalMeterProvider != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+func (m *TelemetryManager) Meter() metric.Meter {
+	return m.meter
+}
 
-		err := globalMeterProvider.Shutdown(ctx)
-		globalMeterProvider = nil
-		globalMeter = nil
-		return err
+func (m *TelemetryManager) Close(ctx context.Context) error {
+	if m.provider != nil {
+		return m.provider.Shutdown(ctx)
 	}
 	return nil
 }

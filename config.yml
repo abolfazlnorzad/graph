@@ -5,4 +5,18 @@ logger:
   file_max_size_in_mb: 100
   file_max_age_in_days: 7
 
+metric:
+  enabled: true
+  exporter: "otlp"
+  endpoint: "localhost:4317"
+  service_name: "graph"
+  interval: 10s
+
+trace:
+  enabled: true
+  exporter: "otlp"
+  endpoint: "localhost:4317"
+  service_name: "graph"
+  sample_rate: 1.0
+  timeout: 5s
 
