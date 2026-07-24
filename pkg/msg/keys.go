@@ -7,6 +7,7 @@ const (
 	ErrInvalidInput     Key = "error.invalid_input"
 	ErrForbidden        Key = "error.forbidden"
 	ErrNotFound         Key = "error.not_found"
+	ErrConflict         Key = "error.conflict"
 	ErrUnauthorized     Key = "error.unauthorized"
 	ErrFieldIsRequired  Key = "error.field_is_required"
 	ErrValidationFailed Key = "error.validation_failed"
