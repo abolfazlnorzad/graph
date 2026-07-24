@@ -15,10 +15,12 @@ import (
 	"github.com/abolfazlnorzad/graph/param"
 	"github.com/abolfazlnorzad/graph/service"
 	"github.com/abolfazlnorzad/graph/service/mocks"
+	"github.com/abolfazlnorzad/graph/validation"
 )
 
 func TestService_CreateTask(t *testing.T) {
 	nopLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	vld := validation.NewValidator()
 
 	t.Run("Success - Task created and cached", func(t *testing.T) {
 		mockRepo := new(mocks.Repository)
@@ -50,7 +52,7 @@ func TestService_CreateTask(t *testing.T) {
 		mockMetrics.On("IncTasksCount", mock.Anything, string(entity.StatusTodo), "none").
 			Return().Once()
 
-		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics)
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
 
 		resp, err := svc.CreateTask(context.Background(), req)
 
@@ -81,7 +83,7 @@ func TestService_CreateTask(t *testing.T) {
 		mockMetrics.On("IncTaskCreated", mock.Anything, "success", "none").Return().Once()
 		mockMetrics.On("IncTasksCount", mock.Anything, string(entity.StatusTodo), "none").Return().Once()
 
-		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics)
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
 
 		resp, err := svc.CreateTask(context.Background(), req)
 
@@ -105,8 +107,7 @@ func TestService_CreateTask(t *testing.T) {
 		mockMetrics.On("RecordTaskCreatedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
 		mockMetrics.On("IncTaskCreated", mock.Anything, "fail", "db_error").Return().Once()
 
-
-		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics)
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
 
 		resp, err := svc.CreateTask(context.Background(), req)
 
@@ -115,6 +116,46 @@ func TestService_CreateTask(t *testing.T) {
 
 		mockRepo.AssertExpectations(t)
 		mockMetrics.AssertExpectations(t)
+		mockCache.AssertNotCalled(t, "Set")
+	})
+
+	t.Run("Fail - Empty title validation error", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		req := param.CreateTaskRequest{Title: "", Status: entity.StatusTodo}
+
+		mockMetrics.On("RecordTaskCreatedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskCreated", mock.Anything, "fail", "validation_error").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.CreateTask(context.Background(), req)
+
+		assert.Error(t, err)
+		assert.Empty(t, resp)
+		mockRepo.AssertNotCalled(t, "CreateTask")
+		mockCache.AssertNotCalled(t, "Set")
+	})
+
+	t.Run("Fail - Invalid status validation error", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		req := param.CreateTaskRequest{Title: "Valid Title", Status: "INVALID_STATUS"}
+
+		mockMetrics.On("RecordTaskCreatedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskCreated", mock.Anything, "fail", "validation_error").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.CreateTask(context.Background(), req)
+
+		assert.Error(t, err)
+		assert.Empty(t, resp)
+		mockRepo.AssertNotCalled(t, "CreateTask")
 		mockCache.AssertNotCalled(t, "Set")
 	})
 }
