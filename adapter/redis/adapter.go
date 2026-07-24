@@ -100,7 +100,15 @@ func (a *Adapter) Close() error {
 func (a *Adapter) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
 	const OP = "redisadapter.Set"
 
-	if err := a.client.Set(ctx, key, value, expiration).Err(); err != nil {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return richerror.New(OP).
+			WithErr(err).
+			WithKind(richerror.KindUnexpected).
+			WithMessage("failed to marshal value")
+	}
+
+	if err := a.client.Set(ctx, key, data, expiration).Err(); err != nil {
 		return richerror.New(OP).
 			WithErr(err).
 			WithKind(richerror.KindUnexpected).

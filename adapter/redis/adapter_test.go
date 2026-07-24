@@ -152,12 +152,18 @@ func TestAdapter_SetAndGet(t *testing.T) {
 
 	_ = a.Delete(ctx, key)
 
-	err := a.Set(ctx, key, "my_test_value", 1*time.Minute)
+	type testData struct {
+		Value string `json:"value"`
+	}
+
+	original := testData{Value: "my_test_value"}
+	err := a.Set(ctx, key, original, 1*time.Minute)
 	require.NoError(t, err)
 
-	val, err := a.Get(ctx, key)
+	var result testData
+	err = a.Get(ctx, key, &result)
 	require.NoError(t, err)
-	assert.Equal(t, "my_test_value", val)
+	assert.Equal(t, original, result)
 
 	_ = a.Delete(ctx, key)
 }
@@ -167,7 +173,8 @@ func TestAdapter_Get_NotFound(t *testing.T) {
 	defer a.Close()
 	ctx := context.Background()
 
-	_, err := a.Get(ctx, "non_existent_random_key")
+	var dest string
+	err := a.Get(ctx, "non_existent_random_key", &dest)
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "redisadapter.Get")
@@ -185,7 +192,8 @@ func TestAdapter_Delete(t *testing.T) {
 	err = a.Delete(ctx, key)
 	require.NoError(t, err)
 
-	_, err = a.Get(ctx, key)
+	var dest string
+	err = a.Get(ctx, key, &dest)
 	require.Error(t, err)
 }
 
