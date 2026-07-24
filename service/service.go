@@ -10,6 +10,7 @@ import (
 	"github.com/abolfazlnorzad/graph/param"
 	"github.com/abolfazlnorzad/graph/pkg/richerror"
 	"github.com/abolfazlnorzad/graph/pkg/trace"
+	"github.com/abolfazlnorzad/graph/validation"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -50,10 +51,11 @@ type Service struct {
 	cache  CacheStore
 	logger *slog.Logger
 	mtr    Metrics
+	vld    validation.Validator
 }
 
-func NewService(repo Repository, cache CacheStore, logger *slog.Logger, mtr Metrics) Service {
-	return Service{repo: repo, cache: cache, logger: logger, mtr: mtr}
+func NewService(repo Repository, cache CacheStore, logger *slog.Logger, mtr Metrics, vld validation.Validator) Service {
+	return Service{repo: repo, cache: cache, logger: logger, mtr: mtr, vld: vld}
 }
 
 func mapTaskEntityToTaskResponse(t entity.Task) param.TaskResponse {
@@ -89,6 +91,13 @@ func (s Service) CreateTask(ctx context.Context, req param.CreateTaskRequest) (p
 		slog.String("title", req.Title),
 		slog.String("status", string(req.Status)),
 	)
+
+	if err := s.vld.ValidateCreateTask(req); err != nil {
+		s.mtr.IncTaskCreated(ctx, "fail", "validation_error")
+		trace.RecordError(span, err)
+		reqLogger.ErrorContext(ctx, "validation failed", slog.Any("error", err))
+		return param.CreateTaskResponse{}, err
+	}
 
 	t, err := s.repo.CreateTask(ctx, entity.Task{
 		Title:       req.Title,
