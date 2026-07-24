@@ -27,6 +27,17 @@ func (h Handler) SetRoutes(g *gin.Engine) {
 	g.GET("tasks", h.ListTasks)
 }
 
+// CreateTask godoc
+// @Summary      Create a new task
+// @Description  Create a task with title, status, and optional description/assignee
+// @Tags         tasks
+// @Accept       json
+// @Produce      json
+// @Param        request  body      param.CreateTaskRequest  true  "Task to create"
+// @Success      201      {object}  middleware.Envelope{data=param.TaskResponse}
+// @Failure      400      {object}  middleware.Envelope
+// @Failure      500      {object}  middleware.Envelope
+// @Router       /tasks [post]
 func (h Handler) CreateTask(c *gin.Context) {
 	var req param.CreateTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -43,6 +54,16 @@ func (h Handler) CreateTask(c *gin.Context) {
 	middleware.JSONResponse(c, http.StatusCreated, resp.Task)
 }
 
+// GetTask godoc
+// @Summary      Get a task by ID
+// @Description  Retrieve a single task by its ID
+// @Tags         tasks
+// @Produce      json
+// @Param        id   path      int  true  "Task ID"
+// @Success      200  {object}  middleware.Envelope{data=param.TaskResponse}
+// @Failure      404  {object}  middleware.Envelope
+// @Failure      500  {object}  middleware.Envelope
+// @Router       /tasks/{id} [get]
 func (h Handler) GetTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -59,6 +80,20 @@ func (h Handler) GetTask(c *gin.Context) {
 	middleware.JSONResponse(c, http.StatusOK, resp.Task)
 }
 
+// UpdateTask godoc
+// @Summary      Update a task
+// @Description  Update task fields (title, description, status, assignee) with optimistic locking
+// @Tags         tasks
+// @Accept       json
+// @Produce      json
+// @Param        id       path      int                      true  "Task ID"
+// @Param        request  body      param.UpdateTaskRequest  true  "Fields to update"
+// @Success      200      {object}  middleware.Envelope{data=param.TaskResponse}
+// @Failure      400      {object}  middleware.Envelope
+// @Failure      404      {object}  middleware.Envelope
+// @Failure      409      {object}  middleware.Envelope
+// @Failure      500      {object}  middleware.Envelope
+// @Router       /tasks/{id} [patch]
 func (h Handler) UpdateTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -82,6 +117,16 @@ func (h Handler) UpdateTask(c *gin.Context) {
 	middleware.JSONResponse(c, http.StatusOK, resp.Task)
 }
 
+// DeleteTask godoc
+// @Summary      Delete a task
+// @Description  Soft delete a task by ID
+// @Tags         tasks
+// @Produce      json
+// @Param        id   path      int  true  "Task ID"
+// @Success      204  "No Content"
+// @Failure      404  {object}  middleware.Envelope
+// @Failure      500  {object}  middleware.Envelope
+// @Router       /tasks/{id} [delete]
 func (h Handler) DeleteTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -98,6 +143,18 @@ func (h Handler) DeleteTask(c *gin.Context) {
 	c.JSON(http.StatusNoContent, nil)
 }
 
+// ListTasks godoc
+// @Summary      List tasks
+// @Description  Get paginated list of tasks with optional status/assignee filters
+// @Tags         tasks
+// @Produce      json
+// @Param        page_number  query     int     false  "Page number"       default(1)
+// @Param        page_size    query     int     false  "Page size"         default(25)
+// @Param        status       query     string  false  "Filter by status"  Enums(TODO, IN_PROGRESS, REVIEW, DONE, REJECTED, BLOCKED, CANCELED)
+// @Param        assignee     query     string  false  "Filter by assignee"
+// @Success      200          {object}  middleware.Envelope{data=object{tasks=[]param.TaskResponse, pagination=param.PaginationResponse}}
+// @Failure      500          {object}  middleware.Envelope
+// @Router       /tasks [get]
 func (h Handler) ListTasks(c *gin.Context) {
 	var req param.ListTasksRequest
 
@@ -123,12 +180,9 @@ func (h Handler) ListTasks(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, Envelope{
-		Status: "success",
-		Data: map[string]any{
-			"tasks":      resp.Tasks,
-			"pagination": resp.Pagination,
-		},
+	middleware.JSONResponse(c, http.StatusOK, map[string]any{
+		"tasks":      resp.Tasks,
+		"pagination": resp.Pagination,
 	})
 }
 

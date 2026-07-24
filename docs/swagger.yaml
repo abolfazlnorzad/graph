@@ -1,0 +1,323 @@
+basePath: /
+definitions:
+  entity.TaskAction:
+    enum:
+    - CREATE
+    - UPDATE
+    - DELETE
+    type: string
+    x-enum-varnames:
+    - ActionCreate
+    - ActionUpdate
+    - ActionDelete
+  entity.TaskStatus:
+    enum:
+    - TODO
+    - IN_PROGRESS
+    - REVIEW
+    - DONE
+    - REJECTED
+    - BLOCKED
+    - CANCELED
+    type: string
+    x-enum-varnames:
+    - StatusTodo
+    - StatusInProgress
+    - StatusReview
+    - StatusDone
+    - StatusRejected
+    - StatusBlocked
+    - StatusCanceled
+  middleware.Envelope:
+    properties:
+      code:
+        type: string
+      data:
+        additionalProperties: {}
+        type: object
+      message:
+        type: string
+      status:
+        type: string
+    type: object
+  param.AuditLogResponse:
+    properties:
+      action:
+        $ref: '#/definitions/entity.TaskAction'
+      created_at:
+        type: string
+      id:
+        type: integer
+      new_state:
+        additionalProperties: {}
+        type: object
+      previous_state:
+        additionalProperties: {}
+        type: object
+      task_id:
+        type: integer
+    type: object
+  param.CreateTaskRequest:
+    properties:
+      assignee:
+        type: string
+      description:
+        type: string
+      status:
+        $ref: '#/definitions/entity.TaskStatus'
+      title:
+        type: string
+      version:
+        type: integer
+    type: object
+  param.PaginationResponse:
+    properties:
+      page_number:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  param.TaskResponse:
+    properties:
+      assignee:
+        type: string
+      audit_logs:
+        items:
+          $ref: '#/definitions/param.AuditLogResponse'
+        type: array
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      status:
+        $ref: '#/definitions/entity.TaskStatus'
+      title:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  param.UpdateTaskRequest:
+    properties:
+      assignee:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      status:
+        $ref: '#/definitions/entity.TaskStatus'
+      title:
+        type: string
+      version:
+        type: integer
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: REST API for managing tasks (CRUD operations)
+  title: Graph Task Management API
+  version: "1.0"
+paths:
+  /tasks:
+    get:
+      description: Get paginated list of tasks with optional status/assignee filters
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page_number
+        type: integer
+      - default: 25
+        description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Filter by status
+        enum:
+        - TODO
+        - IN_PROGRESS
+        - REVIEW
+        - DONE
+        - REJECTED
+        - BLOCKED
+        - CANCELED
+        in: query
+        name: status
+        type: string
+      - description: Filter by assignee
+        in: query
+        name: assignee
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/middleware.Envelope'
+            - properties:
+                data:
+                  properties:
+                    ' pagination':
+                      $ref: '#/definitions/param.PaginationResponse'
+                    tasks:
+                      items:
+                        $ref: '#/definitions/param.TaskResponse'
+                      type: array
+                  type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/middleware.Envelope'
+      summary: List tasks
+      tags:
+      - tasks
+    post:
+      consumes:
+      - application/json
+      description: Create a task with title, status, and optional description/assignee
+      parameters:
+      - description: Task to create
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/param.CreateTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/middleware.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/param.TaskResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/middleware.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/middleware.Envelope'
+      summary: Create a new task
+      tags:
+      - tasks
+  /tasks/{id}:
+    delete:
+      description: Soft delete a task by ID
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/middleware.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/middleware.Envelope'
+      summary: Delete a task
+      tags:
+      - tasks
+    get:
+      description: Retrieve a single task by its ID
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/middleware.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/param.TaskResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/middleware.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/middleware.Envelope'
+      summary: Get a task by ID
+      tags:
+      - tasks
+    patch:
+      consumes:
+      - application/json
+      description: Update task fields (title, description, status, assignee) with
+        optimistic locking
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/param.UpdateTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/middleware.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/param.TaskResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/middleware.Envelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/middleware.Envelope'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/middleware.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/middleware.Envelope'
+      summary: Update a task
+      tags:
+      - tasks
+schemes:
+- http
+swagger: "2.0"

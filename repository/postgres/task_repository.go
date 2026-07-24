@@ -11,8 +11,10 @@ import (
 	"github.com/abolfazlnorzad/graph/pkg/msg"
 	"github.com/abolfazlnorzad/graph/pkg/postgresdb"
 	"github.com/abolfazlnorzad/graph/pkg/richerror"
+	"github.com/abolfazlnorzad/graph/pkg/trace"
 	"github.com/abolfazlnorzad/graph/service"
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var _ service.Repository = (*TaskRepo)(nil)
@@ -32,6 +34,14 @@ func NewTaskRepo(db *postgresdb.Database, logger *slog.Logger) *TaskRepo {
 func (r *TaskRepo) CreateTask(ctx context.Context, t entity.Task) (entity.Task, error) {
 	const op = "postgres.CreateTask"
 
+	ctx, span := trace.Tracer().Start(ctx, op)
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("task.title", t.Title),
+		attribute.String("task.status", string(t.Status)),
+	)
+
 	query := `
 		INSERT INTO tasks (title, description, status, assignee, version)
 		VALUES ($1, $2, $3, $4, $5)
@@ -47,17 +57,24 @@ func (r *TaskRepo) CreateTask(ctx context.Context, t entity.Task) (entity.Task, 
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
 
 	if err != nil {
+		trace.RecordError(span, err)
 		return entity.Task{}, richerror.New(op).
 			WithErr(err).
 			WithKind(richerror.KindUnexpected).
 			WithUserMsgKey(msg.ErrUnexpected)
 	}
 
+	span.SetAttributes(attribute.Int64("task.id", int64(t.ID)))
 	return t, nil
 }
 
 func (r *TaskRepo) GetTask(ctx context.Context, id entity.ID) (entity.Task, error) {
 	const op = "postgres.GetTask"
+
+	ctx, span := trace.Tracer().Start(ctx, op)
+	defer span.End()
+
+	span.SetAttributes(attribute.Int64("task.id", int64(id)))
 
 	query := `
 		SELECT id, title, description, status, assignee, version, created_at, updated_at, deleted_at
@@ -72,6 +89,7 @@ func (r *TaskRepo) GetTask(ctx context.Context, id entity.ID) (entity.Task, erro
 	)
 
 	if err != nil {
+		trace.RecordError(span, err)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return entity.Task{}, richerror.New(op).
 				WithErr(err).
@@ -86,6 +104,14 @@ func (r *TaskRepo) GetTask(ctx context.Context, id entity.ID) (entity.Task, erro
 
 func (r *TaskRepo) UpdateTask(ctx context.Context, t entity.Task) error {
 	const op = "postgres.UpdateTask"
+
+	ctx, span := trace.Tracer().Start(ctx, op)
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.Int64("task.id", int64(t.ID)),
+		attribute.Int("task.version", int(t.Version)),
+	)
 
 	query := `
 		UPDATE tasks 
@@ -110,13 +136,16 @@ func (r *TaskRepo) UpdateTask(ctx context.Context, t entity.Task) error {
 	)
 
 	if err != nil {
+		trace.RecordError(span, err)
 		return richerror.New(op).WithErr(err)
 	}
 
 	if cmdTag.RowsAffected() == 0 {
-		return richerror.New(op).
+		err := richerror.New(op).
 			WithKind(richerror.KindConflict).
 			WithMessage("task not found or version conflict during update")
+		trace.RecordError(span, err)
+		return err
 	}
 
 	return nil
@@ -124,6 +153,11 @@ func (r *TaskRepo) UpdateTask(ctx context.Context, t entity.Task) error {
 
 func (r *TaskRepo) DeleteTask(ctx context.Context, id entity.ID) error {
 	const op = "postgres.DeleteTask"
+
+	ctx, span := trace.Tracer().Start(ctx, op)
+	defer span.End()
+
+	span.SetAttributes(attribute.Int64("task.id", int64(id)))
 
 	query := `
 		UPDATE tasks 
@@ -133,13 +167,16 @@ func (r *TaskRepo) DeleteTask(ctx context.Context, id entity.ID) error {
 
 	cmdTag, err := r.db.Pool.Exec(ctx, query, id)
 	if err != nil {
+		trace.RecordError(span, err)
 		return richerror.New(op).WithErr(err)
 	}
 
 	if cmdTag.RowsAffected() == 0 {
-		return richerror.New(op).
+		err := richerror.New(op).
 			WithKind(richerror.KindNotFound).
 			WithMessage("task not found for deletion")
+		trace.RecordError(span, err)
+		return err
 	}
 
 	return nil
@@ -163,6 +200,14 @@ func (r *TaskRepo) DeleteTask(ctx context.Context, id entity.ID) error {
 func (r *TaskRepo) ListTask(ctx context.Context, criteria service.ListTaskCriteria) ([]entity.Task, int64, error) {
 	const op = "postgres.ListTask"
 
+	ctx, span := trace.Tracer().Start(ctx, op)
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.Int("page.number", criteria.PageNumber),
+		attribute.Int("page.size", criteria.PageSize),
+	)
+
 	whereClauses := []string{"deleted_at IS NULL"}
 	args := []any{}
 	argID := 1
@@ -170,11 +215,13 @@ func (r *TaskRepo) ListTask(ctx context.Context, criteria service.ListTaskCriter
 	if criteria.Status != nil {
 		whereClauses = append(whereClauses, fmt.Sprintf("status = $%d", argID))
 		args = append(args, *criteria.Status)
+		span.SetAttributes(attribute.String("filter.status", string(*criteria.Status)))
 		argID++
 	}
 	if criteria.Assignee != nil {
 		whereClauses = append(whereClauses, fmt.Sprintf("assignee = $%d", argID))
 		args = append(args, *criteria.Assignee)
+		span.SetAttributes(attribute.String("filter.assignee", *criteria.Assignee))
 		argID++
 	}
 
@@ -183,8 +230,11 @@ func (r *TaskRepo) ListTask(ctx context.Context, criteria service.ListTaskCriter
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM tasks WHERE %s", whereQuery)
 	var total int64
 	if err := r.db.Pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		trace.RecordError(span, err)
 		return nil, 0, richerror.New(op).WithErr(err)
 	}
+
+	span.SetAttributes(attribute.Int64("result.total", total))
 
 	if total == 0 {
 		return []entity.Task{}, 0, nil
@@ -205,6 +255,7 @@ func (r *TaskRepo) ListTask(ctx context.Context, criteria service.ListTaskCriter
 
 	rows, err := r.db.Pool.Query(ctx, selectQuery, args...)
 	if err != nil {
+		trace.RecordError(span, err)
 		return nil, 0, richerror.New(op).WithErr(err)
 	}
 	defer rows.Close()
@@ -217,14 +268,17 @@ func (r *TaskRepo) ListTask(ctx context.Context, criteria service.ListTaskCriter
 			&t.Version, &t.CreatedAt, &t.UpdatedAt, &t.DeletedAt,
 		)
 		if err != nil {
+			trace.RecordError(span, err)
 			return nil, 0, richerror.New(op).WithErr(err)
 		}
 		tasks = append(tasks, t)
 	}
 
 	if err = rows.Err(); err != nil {
+		trace.RecordError(span, err)
 		return nil, 0, richerror.New(op).WithErr(err)
 	}
 
+	span.SetAttributes(attribute.Int("result.count", len(tasks)))
 	return tasks, total, nil
 }
