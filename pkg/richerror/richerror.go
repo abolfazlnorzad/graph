@@ -14,6 +14,7 @@ const (
 	KindInvalid      Kind = iota + 1 // (400)
 	KindForbidden                    //   (403)
 	KindNotFound                     //  (404)
+	KindConflict                     //  (409)
 	KindUnexpected                   //   (500)
 	KindUnauthorized                 //   (401)
 )
@@ -26,6 +27,8 @@ func (k Kind) String() string {
 		return "Forbidden"
 	case KindNotFound:
 		return "NotFound"
+	case KindConflict:
+		return "Conflict"
 	case KindUnexpected:
 		return "Unexpected"
 	case KindUnauthorized:
@@ -118,6 +121,8 @@ func (e RichError) UserMsgKey() msg.Key {
 		return msg.ErrNotFound
 	case KindForbidden:
 		return msg.ErrForbidden
+	case KindConflict:
+		return msg.ErrConflict
 	case KindUnauthorized:
 		return msg.ErrUnauthorized
 	case KindUnexpected:

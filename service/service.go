@@ -8,6 +8,7 @@ import (
 
 	"github.com/abolfazlnorzad/graph/entity"
 	"github.com/abolfazlnorzad/graph/param"
+	"github.com/abolfazlnorzad/graph/pkg/msg"
 	"github.com/abolfazlnorzad/graph/pkg/richerror"
 	"github.com/abolfazlnorzad/graph/pkg/trace"
 	"github.com/abolfazlnorzad/graph/validation"
@@ -41,9 +42,11 @@ type CacheStore interface {
 //go:generate mockery --name=Metrics --output=./mocks --outpkg=mocks
 type Metrics interface {
 	IncTaskCreated(ctx context.Context, status string, reason string)
+	IncTaskUpdated(ctx context.Context, status string, reason string)
 	IncTasksCount(ctx context.Context, status string, reason string)
 	DecTasksCount(ctx context.Context, status string, reason string)
 	RecordTaskCreatedDuration(ctx context.Context, duration float64)
+	RecordTaskUpdatedDuration(ctx context.Context, duration float64)
 }
 
 type Service struct {
@@ -130,5 +133,92 @@ func (s Service) CreateTask(ctx context.Context, req param.CreateTaskRequest) (p
 
 	return param.CreateTaskResponse{
 		Task: mapTaskEntityToTaskResponse(t),
+	}, nil
+}
+
+func (s Service) UpdateTask(ctx context.Context, req param.UpdateTaskRequest) (param.UpdateTaskResponse, error) {
+	const op = "service.UpdateTask"
+
+	startTime := time.Now()
+
+	ctx, span := trace.Tracer().Start(ctx, op)
+	defer func() {
+		s.mtr.RecordTaskUpdatedDuration(ctx, time.Since(startTime).Seconds())
+		span.End()
+	}()
+
+	span.SetAttributes(attribute.Int64("task.id", int64(req.ID)))
+	reqLogger := s.logger.With(
+		slog.String("op", op),
+		slog.Int64("task_id", int64(req.ID)),
+	)
+
+	if err := s.vld.ValidateUpdateTask(req); err != nil {
+		s.mtr.IncTaskUpdated(ctx, "fail", "validation_error")
+		trace.RecordError(span, err)
+		reqLogger.ErrorContext(ctx, "validation failed", slog.Any("error", err))
+		return param.UpdateTaskResponse{}, err
+	}
+
+	existing, err := s.repo.GetTask(ctx, req.ID)
+	if err != nil {
+		trace.RecordError(span, err)
+		if richerror.IsKind(err, richerror.KindNotFound) {
+			s.mtr.IncTaskUpdated(ctx, "fail", "not_found")
+			reqLogger.ErrorContext(ctx, "task not found", slog.Int64("task_id", int64(req.ID)))
+			return param.UpdateTaskResponse{}, richerror.New(op).
+				WithErr(err).
+				WithKind(richerror.KindNotFound).
+				WithUserMsgKey(msg.ErrNotFound)
+		}
+		s.mtr.IncTaskUpdated(ctx, "fail", "db_error")
+		reqLogger.ErrorContext(ctx, "failed to get task", slog.Any("error", err))
+		return param.UpdateTaskResponse{}, richerror.New(op).WithErr(err)
+	}
+
+	if existing.Version != req.Version {
+		err := richerror.New(op).
+			WithKind(richerror.KindConflict).
+			WithMessage("version conflict")
+		s.mtr.IncTaskUpdated(ctx, "fail", "version_conflict")
+		trace.RecordError(span, err)
+		reqLogger.ErrorContext(ctx, "version conflict",
+			slog.Int("expected", int(existing.Version)),
+			slog.Int("got", int(req.Version)),
+		)
+		return param.UpdateTaskResponse{}, err
+	}
+
+	if req.Title != nil {
+		existing.Title = *req.Title
+	}
+	if req.Description != nil {
+		existing.Description = req.Description
+	}
+	if req.Status != nil {
+		existing.Status = *req.Status
+	}
+	if req.Assignee != nil {
+		existing.Assignee = req.Assignee
+	}
+	existing.Version++
+
+	if err := s.repo.UpdateTask(ctx, existing); err != nil {
+		s.mtr.IncTaskUpdated(ctx, "fail", "db_error")
+		trace.RecordError(span, err)
+		reqLogger.ErrorContext(ctx, "failed to update task", slog.Any("error", err))
+		return param.UpdateTaskResponse{}, richerror.New(op).WithErr(err)
+	}
+
+	if cErr := s.cache.Delete(ctx, fmt.Sprintf("task:%d", existing.ID)); cErr != nil {
+		trace.RecordError(span, cErr)
+		reqLogger.ErrorContext(ctx, "failed to invalidate task cache", slog.Any("error", cErr))
+	}
+
+	s.mtr.IncTaskUpdated(ctx, "success", "none")
+	reqLogger.InfoContext(ctx, "task updated", slog.Int64("task_id", int64(existing.ID)))
+
+	return param.UpdateTaskResponse{
+		Task: mapTaskEntityToTaskResponse(existing),
 	}, nil
 }
