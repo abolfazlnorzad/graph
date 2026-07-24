@@ -7,7 +7,11 @@ import (
 )
 
 type Config struct {
-	Logger logger.Config `koanf:"logger"`
-	Trace  trace.Config  `koanf:"trace"`
-	Metric metric.Config `koanf:"metric"`
+	HTTPServer HTTPServer    `koanf:"http_server"`
+	Logger     logger.Config `koanf:"logger"`
+	Trace      trace.Config  `koanf:"trace"`
+	Metric     metric.Config `koanf:"metric"`
+}
+type HTTPServer struct {
+	Port int `koanf:"port"`
 }
