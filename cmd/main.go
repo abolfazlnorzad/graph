@@ -17,8 +17,10 @@ import (
 	"github.com/abolfazlnorzad/graph/adapter/appmetrics"
 	"github.com/abolfazlnorzad/graph/delivery/httpserver"
 	"github.com/abolfazlnorzad/graph/delivery/httpserver/taskhandler"
+	"github.com/abolfazlnorzad/graph/pkg/migration"
 	pgdb "github.com/abolfazlnorzad/graph/pkg/postgresdb"
 	redispkg "github.com/abolfazlnorzad/graph/pkg/redis"
+	_ "github.com/abolfazlnorzad/graph/repository/migrations"
 	"github.com/abolfazlnorzad/graph/repository/postgres"
 	redisrepo "github.com/abolfazlnorzad/graph/repository/redis"
 	"github.com/abolfazlnorzad/graph/service"
@@ -78,7 +80,18 @@ func main() {
 	}
 	defer db.Close()
 
-	// 6. Connect Redis
+	// 6. Run migrations
+	migrator, err := migration.NewFromEmbed(cfg.Postgres)
+	if err != nil {
+		log.Error("failed to create migrator", slog.Any("error", err))
+		os.Exit(1)
+	}
+	if err := migrator.Up(); err != nil {
+		log.Error("failed to run migrations", slog.Any("error", err))
+		os.Exit(1)
+	}
+
+	// 7. Connect Redis
 	redisClient, err := redispkg.New(ctx, cfg.Redis)
 	if err != nil {
 		log.Error("failed to connect to redis", slog.Any("error", err))
@@ -86,31 +99,31 @@ func main() {
 	}
 	defer redisClient.Close()
 
-	// 7. Init repositories
+	// 8. Init repositories
 	taskRepo := postgres.NewTaskRepo(db, log)
 	cacheStore := redisrepo.NewAdapter(redisClient)
 
-	// 8. Init metrics adapter
+	// 9. Init metrics adapter
 	appMtr, err := appmetrics.NewAppMetrics(meterMgr.Meter())
 	if err != nil {
 		log.Error("failed to init app metrics", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	// 9. Init service
+	// 10. Init service
 	vld := validation.NewValidator()
 	svc := service.NewService(taskRepo, cacheStore, log, appMtr, vld)
 
-	// 10. Init handler & server
+	// 11. Init handler & server
 	handler := taskhandler.NewHandler(svc)
 	srv := httpserver.New(cfg, log, handler)
 
-	// 11. Start server in a background goroutine
+	// 12. Start server in a background goroutine
 	go func() {
 		srv.Serve()
 	}()
 
-	// 12. Graceful Shutdown Mechanism
+	// 13. Graceful Shutdown Mechanism
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
