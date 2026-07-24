@@ -34,7 +34,7 @@ type Repository interface {
 //go:generate mockery --name=CacheStore --output=./mocks --outpkg=mocks
 type CacheStore interface {
 	Set(ctx context.Context, key string, value any, expiration time.Duration) error
-	Get(ctx context.Context, key string) (string, error)
+	Get(ctx context.Context, key string, dest any) error
 	Delete(ctx context.Context, keys ...string) error
 	GetTTL(ctx context.Context, key string) (time.Duration, bool, error)
 }
@@ -47,6 +47,8 @@ type Metrics interface {
 	DecTasksCount(ctx context.Context, status string, reason string)
 	RecordTaskCreatedDuration(ctx context.Context, duration float64)
 	RecordTaskUpdatedDuration(ctx context.Context, duration float64)
+	IncTaskFetched(ctx context.Context, status string, source string) // source = "cache" or "db"
+	RecordTaskFetchedDuration(ctx context.Context, duration float64)
 }
 
 type Service struct {
@@ -220,5 +222,73 @@ func (s Service) UpdateTask(ctx context.Context, req param.UpdateTaskRequest) (p
 
 	return param.UpdateTaskResponse{
 		Task: mapTaskEntityToTaskResponse(existing),
+	}, nil
+}
+
+func (s Service) GetTask(ctx context.Context, req param.GetTaskByIDRequest) (param.GetTaskByIDResponse, error) {
+	const op = "service.GetTask"
+	startTime := time.Now()
+
+	ctx, span := trace.Tracer().Start(ctx, op)
+	defer func() {
+		s.mtr.RecordTaskFetchedDuration(ctx, time.Since(startTime).Seconds())
+		span.End()
+	}()
+
+	span.SetAttributes(attribute.Int64("task.id", int64(req.ID)))
+	reqLogger := s.logger.With(
+		slog.String("op", op),
+		slog.Int64("task_id", int64(req.ID)),
+	)
+
+	cacheKey := fmt.Sprintf("task:%d", req.ID)
+	var t entity.Task
+
+	err := s.cache.Get(ctx, cacheKey, &t)
+
+	if err == nil {
+		//  (Cache Penetration)
+		if t.ID == 0 {
+			s.mtr.IncTaskFetched(ctx, "fail", "cache_hit_not_found")
+			span.SetAttributes(attribute.Bool("cache.hit", true))
+			reqLogger.DebugContext(ctx, "task marked as not found in cache")
+
+			return param.GetTaskByIDResponse{}, richerror.New(op).
+				WithKind(richerror.KindNotFound).
+				WithMessage("task not found")
+		}
+
+		s.mtr.IncTaskFetched(ctx, "success", "cache")
+		span.SetAttributes(attribute.Bool("cache.hit", true))
+		reqLogger.DebugContext(ctx, "task fetched from cache")
+
+		return param.GetTaskByIDResponse{Task: mapTaskEntityToTaskResponse(t)}, nil
+	}
+
+	span.SetAttributes(attribute.Bool("cache.hit", false))
+
+	t, err = s.repo.GetTask(ctx, req.ID)
+	if err != nil {
+		s.mtr.IncTaskFetched(ctx, "fail", "db")
+		trace.RecordError(span, err)
+
+		if richerror.IsKind(err, richerror.KindNotFound) {
+			_ = s.cache.Set(ctx, cacheKey, entity.Task{ID: 0}, time.Minute*1)
+		}
+
+		reqLogger.ErrorContext(ctx, "failed to get task from db", slog.Any("error", err))
+		return param.GetTaskByIDResponse{}, richerror.New(op).WithErr(err)
+	}
+
+	if cErr := s.cache.Set(ctx, cacheKey, t, time.Minute*5); cErr != nil {
+		trace.RecordError(span, cErr)
+		reqLogger.ErrorContext(ctx, "failed to populate cache", slog.Any("error", cErr))
+	}
+
+	s.mtr.IncTaskFetched(ctx, "success", "db")
+	reqLogger.InfoContext(ctx, "task fetched from db")
+
+	return param.GetTaskByIDResponse{
+		Task: mapTaskEntityToTaskResponse(t),
 	}, nil
 }

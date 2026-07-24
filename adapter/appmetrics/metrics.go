@@ -13,11 +13,13 @@ import (
 var _ service.Metrics = (*AppMetrics)(nil)
 
 type AppMetrics struct {
-	taskCreatedCounter      metric.Int64Counter
-	taskUpdatedCounter      metric.Int64Counter
-	tasksCount              metric.Int64UpDownCounter
-	taskCreatedHistogram    metric.Float64Histogram
-	taskUpdatedHistogram    metric.Float64Histogram
+	taskCreatedCounter   metric.Int64Counter
+	taskUpdatedCounter   metric.Int64Counter
+	tasksCount           metric.Int64UpDownCounter
+	taskCreatedHistogram metric.Float64Histogram
+	taskUpdatedHistogram metric.Float64Histogram
+	taskFetchedCounter   metric.Int64Counter
+	taskFetchedHistogram metric.Float64Histogram
 }
 
 func NewAppMetrics(meter metric.Meter) (*AppMetrics, error) {
@@ -61,12 +63,24 @@ func NewAppMetrics(meter metric.Meter) (*AppMetrics, error) {
 		return nil, fmt.Errorf("failed to create task_updated_duration_seconds metric: %w", err)
 	}
 
+	taskFetchedCounter, err := meter.Int64Counter("task_fetched_total", metric.WithDescription("Total task fetch requests"))
+	if err != nil {
+		return nil, err
+	}
+
+	taskFetchedHistogram, err := meter.Float64Histogram("task_fetched_latency", metric.WithDescription("Task fetch latency"))
+	if err != nil {
+		return nil, err
+	}
+
 	return &AppMetrics{
 		taskCreatedCounter:   taskCreatedCounter,
 		taskUpdatedCounter:   taskUpdatedCounter,
 		tasksCount:           tasksCount,
 		taskCreatedHistogram: taskCreatedHistogram,
 		taskUpdatedHistogram: taskUpdatedHistogram,
+		taskFetchedCounter:   taskFetchedCounter,
+		taskFetchedHistogram: taskFetchedHistogram,
 	}, nil
 }
 
@@ -104,4 +118,15 @@ func (m *AppMetrics) IncTasksCount(ctx context.Context, status string, reason st
 		attribute.String("status", status),
 		attribute.String("reason", reason),
 	))
+}
+
+func (m *AppMetrics) IncTaskFetched(ctx context.Context, status string, source string) {
+	m.taskFetchedCounter.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("status", status),
+		attribute.String("source", source),
+	))
+}
+
+func (m *AppMetrics) RecordTaskFetchedDuration(ctx context.Context, duration float64) {
+	m.taskFetchedHistogram.Record(ctx, duration)
 }
