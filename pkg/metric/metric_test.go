@@ -1,28 +1,25 @@
 package metric_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/abolfazlnorzad/graph/pkg/metric"
 )
 
-func TestInit_Disabled(t *testing.T) {
-	metric.ResetGlobalsForTest()
-
-	err := metric.Init(metric.Config{Enabled: false})
+func TestNew_Disabled(t *testing.T) {
+	m, err := metric.New(metric.Config{Enabled: false})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if metric.Meter() == nil {
-		t.Error("globalMeter should be nil when disabled")
+	if m.Meter() == nil {
+		t.Error("meter should not be nil when disabled (noop)")
 	}
 }
 
-func TestInit_UnsupportedExporter(t *testing.T) {
-	metric.ResetGlobalsForTest()
-
-	err := metric.Init(metric.Config{
+func TestNew_UnsupportedExporter(t *testing.T) {
+	_, err := metric.New(metric.Config{
 		Enabled:     true,
 		Exporter:    "unknown",
 		ServiceName: "test",
@@ -32,10 +29,8 @@ func TestInit_UnsupportedExporter(t *testing.T) {
 	}
 }
 
-func TestInit_OTLP(t *testing.T) {
-	metric.ResetGlobalsForTest()
-
-	err := metric.Init(metric.Config{
+func TestNew_OTLP(t *testing.T) {
+	m, err := metric.New(metric.Config{
 		Enabled:     true,
 		Exporter:    "otlp",
 		Endpoint:    "localhost:4317",
@@ -45,15 +40,13 @@ func TestInit_OTLP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if metric.Meter() == nil {
-		t.Fatal("globalMeter should be set")
+	if m.Meter() == nil {
+		t.Fatal("meter should be set")
 	}
 }
 
-func TestInit_OTLP_NoInterval(t *testing.T) {
-	metric.ResetGlobalsForTest()
-
-	err := metric.Init(metric.Config{
+func TestNew_OTLP_NoInterval(t *testing.T) {
+	_, err := metric.New(metric.Config{
 		Enabled:     true,
 		Exporter:    "otlp",
 		Endpoint:    "localhost:4317",
@@ -64,10 +57,8 @@ func TestInit_OTLP_NoInterval(t *testing.T) {
 	}
 }
 
-func TestInit_Prometheus(t *testing.T) {
-	metric.ResetGlobalsForTest()
-
-	err := metric.Init(metric.Config{
+func TestNew_Prometheus(t *testing.T) {
+	m, err := metric.New(metric.Config{
 		Enabled:     true,
 		Exporter:    "prometheus",
 		ServiceName: "test-service",
@@ -75,55 +66,59 @@ func TestInit_Prometheus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if metric.Meter() == nil {
-		t.Fatal("globalMeter should be set")
+	if m.Meter() == nil {
+		t.Fatal("meter should be set")
 	}
 }
 
 func TestMeter(t *testing.T) {
-	metric.ResetGlobalsForTest()
-
-	metric.Init(metric.Config{
+	m, err := metric.New(metric.Config{
 		Enabled:     true,
 		Exporter:    "prometheus",
 		ServiceName: "test-service",
 	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-	m := metric.Meter()
-	if m == nil {
+	if m.Meter() == nil {
 		t.Fatal("Meter() returned nil")
 	}
 }
 
-func TestMeter_NoopWhenNotInitialized(t *testing.T) {
-	metric.ResetGlobalsForTest()
+func TestMeter_NoopWhenDisabled(t *testing.T) {
+	m, err := metric.New(metric.Config{Enabled: false})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-	m := metric.Meter()
-	if m == nil {
+	if m.Meter() == nil {
 		t.Fatal("Meter() should return a no-op meter, not nil")
 	}
 }
 
 func TestClose(t *testing.T) {
-	metric.ResetGlobalsForTest()
-
-	metric.Init(metric.Config{
+	m, err := metric.New(metric.Config{
 		Enabled:     true,
 		Exporter:    "prometheus",
 		ServiceName: "test-service",
 	})
-
-	err := metric.Close()
 	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := m.Close(context.Background()); err != nil {
 		t.Errorf("Close returned error: %v", err)
 	}
 }
 
 func TestClose_NilProvider(t *testing.T) {
-	metric.ResetGlobalsForTest()
-
-	err := metric.Close()
+	m, err := metric.New(metric.Config{Enabled: false})
 	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := m.Close(context.Background()); err != nil {
 		t.Errorf("Close on nil provider returned error: %v", err)
 	}
 }

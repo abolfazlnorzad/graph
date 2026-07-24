@@ -3,13 +3,13 @@ package postgresdb_test
 import (
 	"testing"
 
-	"github.com/abolfazlnorzad/graph/adapter/postgresdb"
+	postgresdb2 "github.com/abolfazlnorzad/graph/pkg/postgresdb"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestBuildDSN_DefaultConfig(t *testing.T) {
-	cfg := postgresdb.NewConfig()
-	got := postgresdb.BuildDSN(cfg)
+	cfg := postgresdb2.NewConfig()
+	got := postgresdb2.BuildDSN(cfg)
 	want := "postgres://root:@127.0.0.1:5432/dbname?sslmode=disable"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -17,7 +17,7 @@ func TestBuildDSN_DefaultConfig(t *testing.T) {
 }
 
 func TestBuildDSN_CustomConfig(t *testing.T) {
-	cfg := postgresdb.Config{
+	cfg := postgresdb2.Config{
 		Host:     "db.example.com",
 		Port:     5433,
 		Username: "admin",
@@ -25,7 +25,7 @@ func TestBuildDSN_CustomConfig(t *testing.T) {
 		DBName:   "mydb",
 		SSLMode:  "require",
 	}
-	got := postgresdb.BuildDSN(cfg)
+	got := postgresdb2.BuildDSN(cfg)
 	want := "postgres://admin:secret@db.example.com:5433/mydb?sslmode=require"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -33,7 +33,7 @@ func TestBuildDSN_CustomConfig(t *testing.T) {
 }
 
 func TestNewConfig_Defaults(t *testing.T) {
-	cfg := postgresdb.NewConfig()
+	cfg := postgresdb2.NewConfig()
 
 	if cfg.Host != "127.0.0.1" {
 		t.Errorf("Host: got %q, want %q", cfg.Host, "127.0.0.1")
@@ -77,84 +77,84 @@ func TestNewConfig_Defaults(t *testing.T) {
 }
 
 func TestNewConfig_WithHost(t *testing.T) {
-	cfg := postgresdb.NewConfig(postgresdb.WithHost("remote.host"))
+	cfg := postgresdb2.NewConfig(postgresdb2.WithHost("remote.host"))
 	if cfg.Host != "remote.host" {
 		t.Errorf("Host: got %q, want %q", cfg.Host, "remote.host")
 	}
 }
 
 func TestNewConfig_WithPort(t *testing.T) {
-	cfg := postgresdb.NewConfig(postgresdb.WithPort(5433))
+	cfg := postgresdb2.NewConfig(postgresdb2.WithPort(5433))
 	if cfg.Port != 5433 {
 		t.Errorf("Port: got %d, want %d", cfg.Port, 5433)
 	}
 }
 
 func TestNewConfig_WithUsername(t *testing.T) {
-	cfg := postgresdb.NewConfig(postgresdb.WithUsername("admin"))
+	cfg := postgresdb2.NewConfig(postgresdb2.WithUsername("admin"))
 	if cfg.Username != "admin" {
 		t.Errorf("Username: got %q, want %q", cfg.Username, "admin")
 	}
 }
 
 func TestNewConfig_WithPassword(t *testing.T) {
-	cfg := postgresdb.NewConfig(postgresdb.WithPassword("s3cret"))
+	cfg := postgresdb2.NewConfig(postgresdb2.WithPassword("s3cret"))
 	if cfg.Password != "s3cret" {
 		t.Errorf("Password: got %q, want %q", cfg.Password, "s3cret")
 	}
 }
 
 func TestNewConfig_WithDBName(t *testing.T) {
-	cfg := postgresdb.NewConfig(postgresdb.WithDBName("production"))
+	cfg := postgresdb2.NewConfig(postgresdb2.WithDBName("production"))
 	if cfg.DBName != "production" {
 		t.Errorf("DBName: got %q, want %q", cfg.DBName, "production")
 	}
 }
 
 func TestNewConfig_WithSSLMode(t *testing.T) {
-	cfg := postgresdb.NewConfig(postgresdb.WithSSLMode("require"))
+	cfg := postgresdb2.NewConfig(postgresdb2.WithSSLMode("require"))
 	if cfg.SSLMode != "require" {
 		t.Errorf("SSLMode: got %q, want %q", cfg.SSLMode, "require")
 	}
 }
 
 func TestNewConfig_WithMaxConns(t *testing.T) {
-	cfg := postgresdb.NewConfig(postgresdb.WithMaxConns(20))
+	cfg := postgresdb2.NewConfig(postgresdb2.WithMaxConns(20))
 	if cfg.MaxConns != 20 {
 		t.Errorf("MaxConns: got %d, want %d", cfg.MaxConns, 20)
 	}
 }
 
 func TestNewConfig_WithMinConns(t *testing.T) {
-	cfg := postgresdb.NewConfig(postgresdb.WithMinConns(5))
+	cfg := postgresdb2.NewConfig(postgresdb2.WithMinConns(5))
 	if cfg.MinConns != 5 {
 		t.Errorf("MinConns: got %d, want %d", cfg.MinConns, 5)
 	}
 }
 
 func TestNewConfig_WithMaxConnLifetime(t *testing.T) {
-	cfg := postgresdb.NewConfig(postgresdb.WithMaxConnLifetime(7200))
+	cfg := postgresdb2.NewConfig(postgresdb2.WithMaxConnLifetime(7200))
 	if cfg.MaxConnLifetime != 7200 {
 		t.Errorf("MaxConnLifetime: got %d, want %d", cfg.MaxConnLifetime, 7200)
 	}
 }
 
 func TestNewConfig_WithMaxConnIdleTime(t *testing.T) {
-	cfg := postgresdb.NewConfig(postgresdb.WithMaxConnIdleTime(300))
+	cfg := postgresdb2.NewConfig(postgresdb2.WithMaxConnIdleTime(300))
 	if cfg.MaxConnIdleTime != 300 {
 		t.Errorf("MaxConnIdleTime: got %d, want %d", cfg.MaxConnIdleTime, 300)
 	}
 }
 
 func TestNewConfig_WithHealthCheckPeriod(t *testing.T) {
-	cfg := postgresdb.NewConfig(postgresdb.WithHealthCheckPeriod(120))
+	cfg := postgresdb2.NewConfig(postgresdb2.WithHealthCheckPeriod(120))
 	if cfg.HealthCheckPeriod != 120 {
 		t.Errorf("HealthCheckPeriod: got %d, want %d", cfg.HealthCheckPeriod, 120)
 	}
 }
 
 func TestNewConfig_WithPathOfMigrations(t *testing.T) {
-	cfg := postgresdb.NewConfig(postgresdb.WithPathOfMigrations("/opt/migrations"))
+	cfg := postgresdb2.NewConfig(postgresdb2.WithPathOfMigrations("/opt/migrations"))
 	if cfg.PathOfMigrations != "/opt/migrations" {
 		t.Errorf("PathOfMigrations: got %q, want %q", cfg.PathOfMigrations, "/opt/migrations")
 	}
@@ -162,7 +162,7 @@ func TestNewConfig_WithPathOfMigrations(t *testing.T) {
 
 func TestConnect_NewWithConfigError(t *testing.T) {
 	// pgxpool rejects negative MaxConns
-	cfg := postgresdb.Config{
+	cfg := postgresdb2.Config{
 		Host:              "127.0.0.1",
 		Port:              5432,
 		Username:          "test",
@@ -175,7 +175,7 @@ func TestConnect_NewWithConfigError(t *testing.T) {
 		MaxConnIdleTime:   0,
 		HealthCheckPeriod: 0,
 	}
-	_, err := postgresdb.Connect(cfg)
+	_, err := postgresdb2.Connect(cfg)
 	if err == nil {
 		t.Fatal("expected error with negative MaxConns")
 	}
@@ -184,7 +184,7 @@ func TestConnect_NewWithConfigError(t *testing.T) {
 func TestConnect_PingError(t *testing.T) {
 	// pgxpool allows pool creation with valid config even when host is unreachable.
 	// Ping then fails because the backend is not reachable.
-	cfg := postgresdb.Config{
+	cfg := postgresdb2.Config{
 		Host:              "127.0.0.1",
 		Port:              1,
 		Username:          "test",
@@ -197,7 +197,7 @@ func TestConnect_PingError(t *testing.T) {
 		MaxConnIdleTime:   1,
 		HealthCheckPeriod: 1,
 	}
-	_, err := postgresdb.Connect(cfg)
+	_, err := postgresdb2.Connect(cfg)
 	if err == nil {
 		t.Fatal("expected ping error with unreachable host")
 	}
@@ -207,7 +207,7 @@ func TestClose_WithRealPool(t *testing.T) {
 	// Create a real pool that connects to nothing — pgxpool allows this
 	// as long as the DSN is parseable. The pool object is valid even
 	// though the backend is unreachable.
-	dsn := postgresdb.BuildDSN(postgresdb.Config{
+	dsn := postgresdb2.BuildDSN(postgresdb2.Config{
 		Host:     "127.0.0.1",
 		Port:     1,
 		Username: "test",
@@ -228,23 +228,23 @@ func TestClose_WithRealPool(t *testing.T) {
 		t.Skipf("cannot create pool for Close test: %v", err)
 	}
 
-	db := &postgresdb.Database{Pool: pool}
+	db := &postgresdb2.Database{Pool: pool}
 	db.Close()
 }
 
 func TestNewConfig_MultipleOptions(t *testing.T) {
-	cfg := postgresdb.NewConfig(
-		postgresdb.WithHost("prod.db"),
-		postgresdb.WithPort(5432),
-		postgresdb.WithUsername("app"),
-		postgresdb.WithPassword("pass"),
-		postgresdb.WithDBName("graph"),
-		postgresdb.WithSSLMode("require"),
-		postgresdb.WithMaxConns(50),
-		postgresdb.WithMinConns(10),
+	cfg := postgresdb2.NewConfig(
+		postgresdb2.WithHost("prod.db"),
+		postgresdb2.WithPort(5432),
+		postgresdb2.WithUsername("app"),
+		postgresdb2.WithPassword("pass"),
+		postgresdb2.WithDBName("graph"),
+		postgresdb2.WithSSLMode("require"),
+		postgresdb2.WithMaxConns(50),
+		postgresdb2.WithMinConns(10),
 	)
 
-	got := postgresdb.BuildDSN(cfg)
+	got := postgresdb2.BuildDSN(cfg)
 	want := "postgres://app:pass@prod.db:5432/graph?sslmode=require"
 	if got != want {
 		t.Errorf("postgresdb.BuildDSN with options: got %q, want %q", got, want)
