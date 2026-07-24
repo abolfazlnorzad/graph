@@ -540,8 +540,10 @@ func TestService_GetTask(t *testing.T) {
 			Version: 3,
 		}
 
+		// First cache.Get (outside singleflight) → miss
+		// Second cache.Get (inside singleflight re-check) → miss
 		mockCache.On("Get", mock.Anything, "task:1", mock.AnythingOfType("*entity.Task")).
-			Return(errors.New("cache miss")).Once()
+			Return(errors.New("cache miss")).Twice()
 
 		mockRepo.On("GetTask", mock.Anything, entity.ID(1)).
 			Return(dbTask, nil).Once()
@@ -570,8 +572,10 @@ func TestService_GetTask(t *testing.T) {
 		mockCache := new(mocks.CacheStore)
 		mockMetrics := new(mocks.Metrics)
 
+		// First cache.Get (outside singleflight) → miss
+		// Second cache.Get (inside singleflight re-check) → miss
 		mockCache.On("Get", mock.Anything, "task:999", mock.AnythingOfType("*entity.Task")).
-			Return(errors.New("cache miss")).Once()
+			Return(errors.New("cache miss")).Twice()
 
 		notFoundErr := richerror.New("repo.GetTask").
 			WithKind(richerror.KindNotFound).
@@ -602,8 +606,10 @@ func TestService_GetTask(t *testing.T) {
 		mockCache := new(mocks.CacheStore)
 		mockMetrics := new(mocks.Metrics)
 
+		// First cache.Get (outside singleflight) → miss
+		// Second cache.Get (inside singleflight re-check) → miss
 		mockCache.On("Get", mock.Anything, "task:1", mock.AnythingOfType("*entity.Task")).
-			Return(errors.New("cache miss")).Once()
+			Return(errors.New("cache miss")).Twice()
 
 		mockRepo.On("GetTask", mock.Anything, entity.ID(1)).
 			Return(entity.Task{}, errors.New("connection refused")).Once()
@@ -633,8 +639,10 @@ func TestService_GetTask(t *testing.T) {
 			Version: 1,
 		}
 
+		// First cache.Get (outside singleflight) → miss
+		// Second cache.Get (inside singleflight re-check) → miss
 		mockCache.On("Get", mock.Anything, "task:1", mock.AnythingOfType("*entity.Task")).
-			Return(errors.New("cache miss")).Once()
+			Return(errors.New("cache miss")).Twice()
 
 		mockRepo.On("GetTask", mock.Anything, entity.ID(1)).
 			Return(dbTask, nil).Once()
@@ -825,7 +833,7 @@ func TestService_ListTask(t *testing.T) {
 		}
 
 		mockCache.On("Get", mock.Anything, "tasks:list:page:1:size:10:status::assignee:", mock.AnythingOfType("*param.ListTasksResponse")).
-			Return(errors.New("cache miss")).Once()
+			Return(errors.New("cache miss")).Twice()
 
 		mockRepo.On("ListTask", mock.Anything, mock.AnythingOfType("service.ListTaskCriteria")).
 			Return(dbTasks, int64(2), nil).Once()
@@ -862,7 +870,7 @@ func TestService_ListTask(t *testing.T) {
 		}
 
 		mockCache.On("Get", mock.Anything, "tasks:list:page:1:size:25:status:IN_PROGRESS:assignee:", mock.AnythingOfType("*param.ListTasksResponse")).
-			Return(errors.New("cache miss")).Once()
+			Return(errors.New("cache miss")).Twice()
 
 		dbTasks := []entity.Task{
 			{ID: 1, Title: "In Progress Task", Status: entity.StatusInProgress, Version: 1},
@@ -887,6 +895,82 @@ func TestService_ListTask(t *testing.T) {
 		assert.Equal(t, entity.StatusInProgress, resp.Tasks[0].Status)
 	})
 
+	t.Run("Success - With assignee filter", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		assignee := "Ali"
+		req := param.ListTasksRequest{
+			Pagination: param.PaginationRequest{PageNumber: 1, PageSize: 10},
+			Filter:     param.TaskFilter{Assignee: &assignee},
+		}
+
+		mockCache.On("Get", mock.Anything, "tasks:list:page:1:size:10:status::assignee:Ali", mock.AnythingOfType("*param.ListTasksResponse")).
+			Return(errors.New("cache miss")).Maybe()
+
+		dbTasks := []entity.Task{
+			{ID: 1, Title: "Ali Task", Status: entity.StatusTodo, Assignee: &assignee, Version: 1},
+		}
+
+		mockRepo.On("ListTask", mock.Anything, mock.MatchedBy(func(c service.ListTaskCriteria) bool {
+			return c.PageNumber == 1 && c.PageSize == 10 && c.Assignee != nil && *c.Assignee == "Ali"
+		})).Return(dbTasks, int64(1), nil).Once()
+
+		mockCache.On("Set", mock.Anything, "tasks:list:page:1:size:10:status::assignee:Ali", mock.AnythingOfType("param.ListTasksResponse"), 2*time.Minute).
+			Return(nil).Maybe()
+
+		mockMetrics.On("RecordTaskListedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskListed", mock.Anything, "success_db").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.ListTask(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Len(t, resp.Tasks, 1)
+		assert.Equal(t, "Ali Task", resp.Tasks[0].Title)
+	})
+
+	t.Run("Success - With both filters", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		status := entity.StatusDone
+		assignee := "Reza"
+		req := param.ListTasksRequest{
+			Pagination: param.PaginationRequest{PageNumber: 1, PageSize: 10},
+			Filter:     param.TaskFilter{Status: &status, Assignee: &assignee},
+		}
+
+		mockCache.On("Get", mock.Anything, "tasks:list:page:1:size:10:status:DONE:assignee:Reza", mock.AnythingOfType("*param.ListTasksResponse")).
+			Return(errors.New("cache miss")).Maybe()
+
+		dbTasks := []entity.Task{
+			{ID: 1, Title: "Done Task", Status: entity.StatusDone, Assignee: &assignee, Version: 1},
+		}
+
+		mockRepo.On("ListTask", mock.Anything, mock.MatchedBy(func(c service.ListTaskCriteria) bool {
+			return c.Status != nil && *c.Status == entity.StatusDone && c.Assignee != nil && *c.Assignee == "Reza"
+		})).Return(dbTasks, int64(1), nil).Once()
+
+		mockCache.On("Set", mock.Anything, "tasks:list:page:1:size:10:status:DONE:assignee:Reza", mock.AnythingOfType("param.ListTasksResponse"), 2*time.Minute).
+			Return(nil).Maybe()
+
+		mockMetrics.On("RecordTaskListedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskListed", mock.Anything, "success_db").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.ListTask(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Len(t, resp.Tasks, 1)
+		assert.Equal(t, "Done Task", resp.Tasks[0].Title)
+		assert.Equal(t, entity.StatusDone, resp.Tasks[0].Status)
+	})
+
 	t.Run("Success - Empty list", func(t *testing.T) {
 		mockRepo := new(mocks.Repository)
 		mockCache := new(mocks.CacheStore)
@@ -897,7 +981,7 @@ func TestService_ListTask(t *testing.T) {
 		}
 
 		mockCache.On("Get", mock.Anything, "tasks:list:page:1:size:10:status::assignee:", mock.AnythingOfType("*param.ListTasksResponse")).
-			Return(errors.New("cache miss")).Once()
+			Return(errors.New("cache miss")).Twice()
 
 		mockRepo.On("ListTask", mock.Anything, mock.AnythingOfType("service.ListTaskCriteria")).
 			Return([]entity.Task{}, int64(0), nil).Once()
@@ -927,7 +1011,7 @@ func TestService_ListTask(t *testing.T) {
 		}
 
 		mockCache.On("Get", mock.Anything, "tasks:list:page:1:size:10:status::assignee:", mock.AnythingOfType("*param.ListTasksResponse")).
-			Return(errors.New("cache miss")).Once()
+			Return(errors.New("cache miss")).Twice()
 
 		mockRepo.On("ListTask", mock.Anything, mock.AnythingOfType("service.ListTaskCriteria")).
 			Return([]entity.Task{}, int64(0), errors.New("db connection failed")).Once()
@@ -957,7 +1041,7 @@ func TestService_ListTask(t *testing.T) {
 		}
 
 		mockCache.On("Get", mock.Anything, "tasks:list:page:1:size:10:status::assignee:", mock.AnythingOfType("*param.ListTasksResponse")).
-			Return(errors.New("cache miss")).Once()
+			Return(errors.New("cache miss")).Twice()
 
 		mockRepo.On("ListTask", mock.Anything, mock.AnythingOfType("service.ListTaskCriteria")).
 			Return(dbTasks, int64(1), nil).Once()

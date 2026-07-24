@@ -13,6 +13,7 @@ import (
 	"github.com/abolfazlnorzad/graph/pkg/trace"
 	"github.com/abolfazlnorzad/graph/validation"
 	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sync/singleflight"
 )
 
 type ListTaskCriteria struct {
@@ -62,6 +63,7 @@ type Service struct {
 	logger *slog.Logger
 	mtr    Metrics
 	vld    validation.Validator
+	sf     singleflight.Group
 }
 
 func NewService(repo Repository, cache CacheStore, logger *slog.Logger, mtr Metrics, vld validation.Validator) Service {
@@ -258,7 +260,7 @@ func (s Service) GetTask(ctx context.Context, req param.GetTaskByIDRequest) (par
 	err := s.cache.Get(ctx, cacheKey, &t)
 
 	if err == nil {
-		//  (Cache Penetration)
+		// Cache Penetration
 		if t.ID == 0 {
 			s.mtr.IncTaskFetched(ctx, "fail", "cache_hit_not_found")
 			span.SetAttributes(attribute.Bool("cache.hit", true))
@@ -278,24 +280,43 @@ func (s Service) GetTask(ctx context.Context, req param.GetTaskByIDRequest) (par
 
 	span.SetAttributes(attribute.Bool("cache.hit", false))
 
-	t, err = s.repo.GetTask(ctx, req.ID)
+	// Singleflight: only one goroutine hits DB for the same key
+	result, err, _ := s.sf.Do(cacheKey, func() (any, error) {
+		// Re-check cache inside singleflight (another goroutine may have populated it)
+		var cachedTask entity.Task
+		if cacheErr := s.cache.Get(ctx, cacheKey, &cachedTask); cacheErr == nil {
+			if cachedTask.ID == 0 {
+				return nil, richerror.New(op).WithKind(richerror.KindNotFound).WithMessage("task not found")
+			}
+			return cachedTask, nil
+		}
+
+		// Fetch from DB
+		task, dbErr := s.repo.GetTask(ctx, req.ID)
+		if dbErr != nil {
+			if richerror.IsKind(dbErr, richerror.KindNotFound) {
+				_ = s.cache.Set(ctx, cacheKey, entity.Task{ID: 0}, time.Minute*1)
+			}
+			return nil, dbErr
+		}
+
+		// Populate cache
+		if cacheErr := s.cache.Set(ctx, cacheKey, task, time.Minute*5); cacheErr != nil {
+			trace.RecordError(span, cacheErr)
+			reqLogger.WarnContext(ctx, "failed to populate cache", slog.Any("error", cacheErr))
+		}
+
+		return task, nil
+	})
+
 	if err != nil {
 		s.mtr.IncTaskFetched(ctx, "fail", "db")
 		trace.RecordError(span, err)
-
-		if richerror.IsKind(err, richerror.KindNotFound) {
-			_ = s.cache.Set(ctx, cacheKey, entity.Task{ID: 0}, time.Minute*1)
-		}
-
-		reqLogger.ErrorContext(ctx, "failed to get task from db", slog.Any("error", err))
+		reqLogger.ErrorContext(ctx, "failed to get task", slog.Any("error", err))
 		return param.GetTaskByIDResponse{}, richerror.New(op).WithErr(err)
 	}
 
-	if cErr := s.cache.Set(ctx, cacheKey, t, time.Minute*5); cErr != nil {
-		trace.RecordError(span, cErr)
-		reqLogger.ErrorContext(ctx, "failed to populate cache", slog.Any("error", cErr))
-	}
-
+	t = result.(entity.Task)
 	s.mtr.IncTaskFetched(ctx, "success", "db")
 	reqLogger.InfoContext(ctx, "task fetched from db")
 
@@ -397,40 +418,56 @@ func (s Service) ListTask(ctx context.Context, req param.ListTasksRequest) (para
 	}
 
 	span.SetAttributes(attribute.Bool("cache.hit", false))
-	criteria := ListTaskCriteria{
-		PageNumber: req.Pagination.PageNumber,
-		PageSize:   req.Pagination.PageSize,
-		Status:     req.Filter.Status,
-		Assignee:   req.Filter.Assignee,
-	}
 
-	tasks, total, err := s.repo.ListTask(ctx, criteria)
+	// Singleflight: only one goroutine hits DB for the same cache key
+	result, err, _ := s.sf.Do(cacheKey, func() (any, error) {
+		// Re-check cache inside singleflight
+		var cached param.ListTasksResponse
+		if cacheErr := s.cache.Get(ctx, cacheKey, &cached); cacheErr == nil {
+			return cached, nil
+		}
+
+		criteria := ListTaskCriteria{
+			PageNumber: req.Pagination.PageNumber,
+			PageSize:   req.Pagination.PageSize,
+			Status:     req.Filter.Status,
+			Assignee:   req.Filter.Assignee,
+		}
+
+		tasks, total, dbErr := s.repo.ListTask(ctx, criteria)
+		if dbErr != nil {
+			return nil, dbErr
+		}
+
+		var respTasks []param.TaskResponse
+		for _, t := range tasks {
+			respTasks = append(respTasks, mapTaskEntityToTaskResponse(t))
+		}
+
+		resp := param.ListTasksResponse{
+			Tasks: respTasks,
+			Pagination: param.PaginationResponse{
+				PageSize:   req.Pagination.PageSize,
+				PageNumber: req.Pagination.PageNumber,
+				Total:      total,
+			},
+		}
+
+		if cacheErr := s.cache.Set(ctx, cacheKey, resp, time.Minute*2); cacheErr != nil {
+			trace.RecordError(span, cacheErr)
+			reqLogger.WarnContext(ctx, "failed to cache task list", slog.Any("error", cacheErr))
+		}
+
+		return resp, nil
+	})
+
 	if err != nil {
 		s.mtr.IncTaskListed(ctx, "fail_db")
 		trace.RecordError(span, err)
-		reqLogger.ErrorContext(ctx, "failed to list tasks from db", slog.Any("error", err))
+		reqLogger.ErrorContext(ctx, "failed to list tasks", slog.Any("error", err))
 		return param.ListTasksResponse{}, richerror.New(op).WithErr(err)
 	}
 
-	var respTasks []param.TaskResponse
-	for _, t := range tasks {
-		respTasks = append(respTasks, mapTaskEntityToTaskResponse(t))
-	}
-
-	resp := param.ListTasksResponse{
-		Tasks: respTasks,
-		Pagination: param.PaginationResponse{
-			PageSize:   req.Pagination.PageSize,
-			PageNumber: req.Pagination.PageNumber,
-			Total:      total,
-		},
-	}
-
-	if cErr := s.cache.Set(ctx, cacheKey, resp, time.Minute*2); cErr != nil {
-		trace.RecordError(span, cErr)
-		reqLogger.WarnContext(ctx, "failed to cache task list", slog.Any("error", cErr))
-	}
-
 	s.mtr.IncTaskListed(ctx, "success_db")
-	return resp, nil
+	return result.(param.ListTasksResponse), nil
 }
