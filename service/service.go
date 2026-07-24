@@ -49,6 +49,8 @@ type Metrics interface {
 	RecordTaskUpdatedDuration(ctx context.Context, duration float64)
 	IncTaskFetched(ctx context.Context, status string, source string) // source = "cache" or "db"
 	RecordTaskFetchedDuration(ctx context.Context, duration float64)
+	IncTaskDeleted(ctx context.Context, status string, reason string)
+	RecordTaskDeletedDuration(ctx context.Context, duration float64)
 }
 
 type Service struct {
@@ -291,4 +293,60 @@ func (s Service) GetTask(ctx context.Context, req param.GetTaskByIDRequest) (par
 	return param.GetTaskByIDResponse{
 		Task: mapTaskEntityToTaskResponse(t),
 	}, nil
+}
+
+func (s Service) DeleteTask(ctx context.Context, req param.DeleteTaskRequest) (param.DeleteTaskResponse, error) {
+	const op = "service.DeleteTask"
+	startTime := time.Now()
+
+	ctx, span := trace.Tracer().Start(ctx, op)
+	defer func() {
+		s.mtr.RecordTaskDeletedDuration(ctx, time.Since(startTime).Seconds())
+		span.End()
+	}()
+
+	span.SetAttributes(attribute.Int64("task.id", int64(req.ID)))
+	reqLogger := s.logger.With(
+		slog.String("op", op),
+		slog.Int64("task_id", int64(req.ID)),
+	)
+
+
+	err := s.repo.DeleteTask(ctx, req.ID)
+	if err != nil {
+		trace.RecordError(span, err)
+
+
+		if richerror.IsKind(err, richerror.KindNotFound) {
+			s.mtr.IncTaskDeleted(ctx, "fail", "not_found")
+			reqLogger.WarnContext(ctx, "task not found for deletion", slog.Any("error", err))
+
+			return param.DeleteTaskResponse{}, richerror.New(op).
+				WithKind(richerror.KindNotFound).
+				WithMessage("task not found").
+				WithErr(err)
+		}
+
+		s.mtr.IncTaskDeleted(ctx, "fail", "db_error")
+		reqLogger.ErrorContext(ctx, "failed to delete task from db", slog.Any("error", err))
+		return param.DeleteTaskResponse{}, richerror.New(op).
+			WithKind(richerror.KindUnexpected).
+			WithMessage("failed to delete task").
+			WithErr(err)
+	}
+
+
+	cacheKey := fmt.Sprintf("task:%d", req.ID)
+	if cErr := s.cache.Delete(ctx, cacheKey); cErr != nil {
+		trace.RecordError(span, cErr)
+		reqLogger.WarnContext(ctx, "failed to invalidate cache after deletion, data might be stale", slog.Any("error", cErr))
+	}
+
+
+	s.mtr.IncTaskDeleted(ctx, "success", "none")
+	s.mtr.DecTasksCount(ctx, "deleted", "user_action")
+
+	reqLogger.InfoContext(ctx, "task deleted successfully")
+
+	return param.DeleteTaskResponse{}, nil
 }

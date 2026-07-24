@@ -644,3 +644,113 @@ func TestService_GetTask(t *testing.T) {
 		assert.Equal(t, entity.StatusDone, resp.Task.Status)
 	})
 }
+
+func TestService_DeleteTask(t *testing.T) {
+	nopLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	vld := validation.NewValidator()
+
+	t.Run("Success - Task deleted and cache invalidated", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		req := param.DeleteTaskRequest{ID: 1}
+
+		mockRepo.On("DeleteTask", mock.Anything, entity.ID(1)).
+			Return(nil).Once()
+
+		mockCache.On("Delete", mock.Anything, "task:1").Return(nil).Once()
+
+		mockMetrics.On("RecordTaskDeletedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskDeleted", mock.Anything, "success", "none").Return().Once()
+		mockMetrics.On("DecTasksCount", mock.Anything, "deleted", "user_action").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.DeleteTask(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Empty(t, resp)
+
+		mockRepo.AssertExpectations(t)
+		mockCache.AssertExpectations(t)
+		mockMetrics.AssertExpectations(t)
+	})
+
+	t.Run("Success - Task deleted, cache invalidation fails (best-effort)", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		req := param.DeleteTaskRequest{ID: 1}
+
+		mockRepo.On("DeleteTask", mock.Anything, entity.ID(1)).
+			Return(nil).Once()
+
+		mockCache.On("Delete", mock.Anything, "task:1").Return(errors.New("redis down")).Once()
+
+		mockMetrics.On("RecordTaskDeletedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskDeleted", mock.Anything, "success", "none").Return().Once()
+		mockMetrics.On("DecTasksCount", mock.Anything, "deleted", "user_action").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.DeleteTask(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Empty(t, resp)
+
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("Fail - Task not found", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		req := param.DeleteTaskRequest{ID: 999}
+
+		notFoundErr := richerror.New("repo.DeleteTask").
+			WithKind(richerror.KindNotFound).
+			WithMessage("task not found")
+
+		mockRepo.On("DeleteTask", mock.Anything, entity.ID(999)).
+			Return(notFoundErr).Once()
+
+		mockMetrics.On("RecordTaskDeletedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskDeleted", mock.Anything, "fail", "not_found").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.DeleteTask(context.Background(), req)
+
+		assert.Error(t, err)
+		assert.Empty(t, resp)
+		assert.True(t, richerror.IsKind(err, richerror.KindNotFound))
+
+		mockCache.AssertNotCalled(t, "Delete")
+	})
+
+	t.Run("Fail - DB error", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		req := param.DeleteTaskRequest{ID: 1}
+
+		mockRepo.On("DeleteTask", mock.Anything, entity.ID(1)).
+			Return(errors.New("connection refused")).Once()
+
+		mockMetrics.On("RecordTaskDeletedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskDeleted", mock.Anything, "fail", "db_error").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.DeleteTask(context.Background(), req)
+
+		assert.Error(t, err)
+		assert.Empty(t, resp)
+
+		mockCache.AssertNotCalled(t, "Delete")
+	})
+}

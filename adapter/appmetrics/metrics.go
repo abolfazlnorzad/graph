@@ -20,6 +20,8 @@ type AppMetrics struct {
 	taskUpdatedHistogram metric.Float64Histogram
 	taskFetchedCounter   metric.Int64Counter
 	taskFetchedHistogram metric.Float64Histogram
+	taskDeletedCounter   metric.Int64Counter
+	taskDeletedHistogram metric.Float64Histogram
 }
 
 func NewAppMetrics(meter metric.Meter) (*AppMetrics, error) {
@@ -73,6 +75,16 @@ func NewAppMetrics(meter metric.Meter) (*AppMetrics, error) {
 		return nil, err
 	}
 
+	taskDeletedCounter, err := meter.Int64Counter("task_deleted_total", metric.WithDescription("Total task delete requests"))
+	if err != nil {
+		return nil, err
+	}
+
+	taskDeletedHistogram, err := meter.Float64Histogram("task_deleted_latency", metric.WithDescription("Task delete latency"))
+	if err != nil {
+		return nil, err
+	}
+
 	return &AppMetrics{
 		taskCreatedCounter:   taskCreatedCounter,
 		taskUpdatedCounter:   taskUpdatedCounter,
@@ -81,6 +93,8 @@ func NewAppMetrics(meter metric.Meter) (*AppMetrics, error) {
 		taskUpdatedHistogram: taskUpdatedHistogram,
 		taskFetchedCounter:   taskFetchedCounter,
 		taskFetchedHistogram: taskFetchedHistogram,
+		taskDeletedCounter:   taskDeletedCounter,
+		taskDeletedHistogram: taskDeletedHistogram,
 	}, nil
 }
 
@@ -129,4 +143,15 @@ func (m *AppMetrics) IncTaskFetched(ctx context.Context, status string, source s
 
 func (m *AppMetrics) RecordTaskFetchedDuration(ctx context.Context, duration float64) {
 	m.taskFetchedHistogram.Record(ctx, duration)
+}
+
+func (m *AppMetrics) IncTaskDeleted(ctx context.Context, status string, reason string) {
+	m.taskDeletedCounter.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("status", status),
+		attribute.String("reason", reason),
+	))
+}
+
+func (m *AppMetrics) RecordTaskDeletedDuration(ctx context.Context, duration float64) {
+	m.taskDeletedHistogram.Record(ctx, duration)
 }
