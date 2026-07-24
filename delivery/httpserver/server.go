@@ -1,32 +1,39 @@
 package httpserver
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/abolfazlnorzad/graph/delivery/httpserver/middleware"
+	"github.com/abolfazlnorzad/graph/delivery/httpserver/taskhandler"
 	"github.com/abolfazlnorzad/graph/pkg/config"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Server struct {
-	config config.Config
-	logger *slog.Logger
-	Router *gin.Engine
+	config  config.Config
+	logger  *slog.Logger
+	Router  *gin.Engine
+	handler taskhandler.Handler
+	httpSrv *http.Server
 }
 
-func New(cfg config.Config, logger *slog.Logger) Server {
+func New(cfg config.Config, logger *slog.Logger, handler taskhandler.Handler) Server {
 	return Server{
-		config: cfg,
-		logger: logger,
-
-		Router: gin.New(),
+		config:  cfg,
+		logger:  logger,
+		handler: handler,
+		Router:  gin.New(),
 	}
 }
 
-func (s Server) Serve() {
+func (s *Server) Serve() {
+	s.Router.Use(middleware.ErrorHandler())
+
 	s.Router.Use(middleware.OTelMetricsMiddleware())
 
 	s.Router.Use(s.requestLogger())
@@ -34,13 +41,26 @@ func (s Server) Serve() {
 	s.Router.Use(gin.Recovery())
 
 	s.Router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	s.handler.SetRoutes(s.Router)
 
 	address := fmt.Sprintf(":%d", s.config.HTTPServer.Port)
+	s.httpSrv = &http.Server{
+		Addr:    address,
+		Handler: s.Router,
+	}
+
 	s.logger.Info("starting http server", slog.String("address", address))
 
-	if err := s.Router.Run(address); err != nil {
+	if err := s.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		s.logger.Error("error starting server", slog.Any("error", err))
 	}
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	if s.httpSrv != nil {
+		return s.httpSrv.Shutdown(ctx)
+	}
+	return nil
 }
 
 func (s Server) requestLogger() gin.HandlerFunc {

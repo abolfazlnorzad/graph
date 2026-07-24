@@ -1,3 +1,6 @@
+http_server:
+  port: 8080
+
 logger:
   level: info
   file_path: logs/app.log
@@ -20,3 +23,21 @@ trace:
   sample_rate: 1.0
   timeout: 5s
 
+postgres:
+  host: localhost
+  port: 5432
+  user: graph
+  password: graph
+  db_name: graph_db
+  ssl_mode: disable
+  max_conns: 10
+  min_conns: 2
+  max_conn_lifetime: 3600
+  max_conn_idle_time: 600
+  health_check_period: 30
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
