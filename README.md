@@ -199,4 +199,80 @@ make docker-down      # Stop all services
 make swagger          # Regenerate swagger docs
 make mocks            # Regenerate mocks
 make clean            # Clean build artifacts
+make k6-load          # Run k6 load test
+make k6-stress        # Run k6 stress test
+make k6-spike         # Run k6 spike test
+make k6-all           # Run all k6 tests
+```
+
+---
+
+## k6 Performance Tests
+
+Full performance test suite using [k6](https://k6.io/). Install with `brew install k6`.
+
+| Test | VUs | Duration | Goal |
+|------|-----|----------|------|
+| **Load** | 0→50→0 | ~130s | Normal production traffic within SLA |
+| **Stress** | 0→5→20→50→100→200→500→0 | ~4min | Find breaking point |
+| **Spike** | 5→300→5→0 | ~2min | Flash sale / viral burst recovery |
+| **Soak** | 0→20 (10min sustained) | ~11min | Memory leaks, connection pool exhaustion |
+
+### Run
+
+```bash
+make k6-load
+make k6-stress
+make k6-spike
+make k6-soak
+make k6-all
+```
+
+### Results
+
+| Test | Throughput | p95 Latency | Error Rate |
+|------|-----------|-------------|-----------|
+| Load (50 VUs) | 121.40 req/s | 9.0ms | 0.00%* |
+| Stress (500 VUs) | 416.74 req/s | 27.0ms | 0.00% |
+| Spike (300 VUs) | 267.52 req/s | 39.7ms | 0.00% |
+
+> \* Load test 409 Conflict responses from optimistic locking are expected, not failures.
+
+---
+
+## Benchmark & pprof
+
+### Run Benchmarks
+
+```bash
+make test-bench
+```
+
+### Benchmark Results
+
+```
+Benchmark           Iterations    ns/op        B/op      allocs/op
+───────────────────────────────────────────────────────────────────
+BenchmarkCreateTask    64,928     52,146      28,904       309
+BenchmarkGetTask      147,530     23,345      12,554       147
+BenchmarkUpdateTask    65,786     48,733      28,137       307
+BenchmarkDeleteTask    79,022     44,716      22,590       244
+BenchmarkListTask      57,543     61,552      33,504       380
+```
+
+### pprof Analysis
+
+```bash
+# Generate profiles
+make test-bench
+
+# CPU profile
+go tool pprof cpu.prof
+
+# Memory profile
+go tool pprof mem.prof
+
+# Top functions
+go tool pprof -top cpu.prof
+go tool pprof -top mem.prof
 ```
