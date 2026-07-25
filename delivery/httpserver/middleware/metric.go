@@ -21,6 +21,11 @@ func OTelMetricsMiddleware() gin.HandlerFunc {
 	requestLatency, _ := meter.Float64Histogram(
 		"request_latency_histogram",
 		metric.WithDescription("Latency of HTTP requests in seconds"),
+		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(
+			0.001, 0.002, 0.005, 0.01, 0.025, 0.05,
+			0.1, 0.25, 0.5, 1, 2.5, 5, 10,
+		),
 	)
 
 	return func(c *gin.Context) {

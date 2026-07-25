@@ -12,6 +12,7 @@ import (
 	"github.com/abolfazlnorzad/graph/pkg/config"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel/trace"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
@@ -35,6 +36,8 @@ func New(cfg config.Config, logger *slog.Logger, handler taskhandler.Handler) Se
 
 func (s *Server) Serve() {
 	s.Router.Use(middleware.ErrorHandler())
+
+	s.Router.Use(middleware.OTelTracingMiddleware())
 
 	s.Router.Use(middleware.OTelMetricsMiddleware())
 
@@ -87,7 +90,7 @@ func (s Server) requestLogger() gin.HandlerFunc {
 			errMsg = c.Errors.String()
 		}
 
-		s.logger.Info("http request",
+		attrs := []slog.Attr{
 			slog.String("client_ip", clientIP),
 			slog.String("method", method),
 			slog.String("path", path),
@@ -98,6 +101,17 @@ func (s Server) requestLogger() gin.HandlerFunc {
 			slog.Int("response_size", responseSize),
 			slog.String("protocol", protocol),
 			slog.String("error", errMsg),
-		)
+		}
+
+		// Inject trace_id and span_id from request context
+		spanCtx := trace.SpanContextFromContext(c.Request.Context())
+		if spanCtx.IsValid() {
+			attrs = append(attrs,
+				slog.String("trace_id", spanCtx.TraceID().String()),
+				slog.String("span_id", spanCtx.SpanID().String()),
+			)
+		}
+
+		s.logger.LogAttrs(c.Request.Context(), slog.LevelInfo, "http request", attrs...)
 	}
 }

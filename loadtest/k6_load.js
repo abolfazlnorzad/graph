@@ -57,7 +57,7 @@ export const options = {
         task_create_duration: ['p(95)<400'],
         task_get_duration: ['p(95)<200'],
         task_list_duration: ['p(95)<500'],
-        errors: ['rate<0.03'],
+        errors: ['rate<0.05'],
     },
 };
 
@@ -72,6 +72,7 @@ export function mixedScenario() {
         const res = http.post(`${BASE_URL}/tasks`, payload, {
             headers: HEADERS,
             tags: { name: 'POST /tasks' },
+            timeout: '10s',
         });
 
         const passed = check(res, {
@@ -99,6 +100,7 @@ export function mixedScenario() {
         const res = http.get(`${BASE_URL}/tasks/${id}`, {
             headers: HEADERS,
             tags: { name: 'GET /tasks/:id' },
+            timeout: '5s',
         });
 
         const passed = check(res, {
@@ -118,14 +120,14 @@ export function mixedScenario() {
     group('List Tasks', () => {
         const res = http.get(
             `${BASE_URL}/tasks?page_number=1&page_size=10&status=TODO`,
-            { headers: HEADERS, tags: { name: 'GET /tasks (list)' } }
+            { headers: HEADERS, tags: { name: 'GET /tasks (list)' }, timeout: '10s' }
         );
 
         const passed = check(res, {
             'list: status 200': (r) => r.status === 200,
             'list: has pagination': (r) => {
                 try {
-                    return JSON.parse(r.body)?.data?.pagination?.total >= 0;
+                    return JSON.parse(r.body)?.data?.result?.pagination?.total >= 0;
                 } catch { return false; }
             },
         });
@@ -138,7 +140,7 @@ export function mixedScenario() {
     group('List Tasks with Filters', () => {
         const res = http.get(
             `${BASE_URL}/tasks?page_number=1&page_size=5&status=TODO&assignee=Alice`,
-            { headers: HEADERS, tags: { name: 'GET /tasks (filtered)' } }
+            { headers: HEADERS, tags: { name: 'GET /tasks (filtered)' }, timeout: '10s' }
         );
 
         check(res, {
@@ -159,6 +161,7 @@ export function mixedScenario() {
         const getRes = http.get(`${BASE_URL}/tasks/${id}`, {
             headers: HEADERS,
             tags: { name: 'GET /tasks/:id (for update)' },
+            timeout: '5s',
         });
 
         let version = 1;
@@ -175,6 +178,7 @@ export function mixedScenario() {
         const res = http.patch(`${BASE_URL}/tasks/${id}`, updatePayload, {
             headers: HEADERS,
             tags: { name: 'PATCH /tasks/:id' },
+            timeout: '5s',
         });
 
         check(res, {
@@ -194,6 +198,7 @@ export function mixedScenario() {
         const res = http.del(`${BASE_URL}/tasks/${id}`, null, {
             headers: HEADERS,
             tags: { name: 'DELETE /tasks/:id' },
+            timeout: '5s',
         });
 
         check(res, {

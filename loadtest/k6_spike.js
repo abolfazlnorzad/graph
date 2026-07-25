@@ -5,11 +5,11 @@
  * Tests: does the system recover after a massive burst?
  *
  * Phases:
- *   1. Baseline    30s  →  5 VUs (normal traffic)
- *   2. Spike       10s  → 300 VUs (sudden burst)
- *   3. Sustain     30s  → 300 VUs (keep pressure)
- *   4. Recovery    30s  →  5 VUs (post-spike)
- *   5. Cooldown    20s  →  0 VUs
+ *   1. Baseline    30s  →    5 VUs (normal traffic)
+ *   2. Spike       10s  → 1000 VUs (sudden burst)
+ *   3. Sustain     30s  → 1000 VUs (keep pressure)
+ *   4. Recovery    30s  →    5 VUs (post-spike)
+ *   5. Cooldown    20s  →    0 VUs
  *
  * Usage:
  *   k6 run loadtest/k6_spike.js
@@ -36,21 +36,20 @@ export const options = {
             executor: 'ramping-vus',
             startVUs: 0,
             stages: [
-                { duration: '30s', target: 5 },     // baseline
-                { duration: '5s', target: 300 },     // spike ramp
-                { duration: '30s', target: 300 },    // sustain spike
-                { duration: '5s', target: 5 },       // recover ramp
-                { duration: '30s', target: 5 },      // post-spike
-                { duration: '10s', target: 0 },      // cooldown
+                { duration: '30s', target: 5 },      // baseline
+                { duration: '10s', target: 1000 },    // spike ramp
+                { duration: '30s', target: 1000 },    // sustain spike
+                { duration: '5s', target: 5 },        // recover ramp
+                { duration: '30s', target: 5 },       // post-spike
+                { duration: '10s', target: 0 },       // cooldown
             ],
             exec: 'spikeScenario',
         },
     },
     thresholds: {
         http_reqs: ['rate>10'],
-        // Relax thresholds — spike test expects degradation
-        http_req_duration: ['p(95)<8000'],
-        errors: ['rate<0.40'],
+        http_req_duration: ['p(95)<10000'],
+        errors: ['rate<0.30'],
     },
 };
 
@@ -59,7 +58,6 @@ const createdTaskIds = [];
 export function spikeScenario() {
     activeVUs.add(__VU);
 
-    // Alternate between read-heavy and write operations
     const rand = Math.random();
 
     if (rand < 0.6) {
@@ -72,8 +70,15 @@ export function spikeScenario() {
                 tags: { name: 'GET /tasks/:id' },
                 timeout: '15s',
             });
-            check(res, { 'get: ok': (r) => r.status === 200 });
-            errorRate.add(res.status !== 200);
+            const passed = check(res, {
+                'get: status 200': (r) => r.status === 200,
+                'get: has task data': (r) => {
+                    try {
+                        return JSON.parse(r.body)?.data?.result?.id > 0;
+                    } catch { return false; }
+                },
+            });
+            errorRate.add(!passed);
             reqDuration.add(res.timings.duration);
         } else {
             // LIST
@@ -81,8 +86,15 @@ export function spikeScenario() {
                 `${BASE_URL}/tasks?page_number=1&page_size=10`,
                 { headers: HEADERS, tags: { name: 'GET /tasks' }, timeout: '15s' }
             );
-            check(res, { 'list: ok': (r) => r.status === 200 });
-            errorRate.add(res.status !== 200);
+            const passed = check(res, {
+                'list: status 200': (r) => r.status === 200,
+                'list: has pagination': (r) => {
+                    try {
+                        return JSON.parse(r.body)?.data?.result?.pagination?.total >= 0;
+                    } catch { return false; }
+                },
+            });
+            errorRate.add(!passed);
             reqDuration.add(res.timings.duration);
         }
     } else if (rand < 0.85) {
@@ -92,7 +104,13 @@ export function spikeScenario() {
             tags: { name: 'POST /tasks' },
             timeout: '15s',
         });
-        const passed = check(res, { 'create: ok': (r) => r.status === 201 });
+        const passed = check(res, {
+            'create: status 201': (r) => r.status === 201,
+            'create: has id': (r) => {
+                const id = extractTaskId(r.body);
+                return id !== null && id > 0;
+            },
+        });
         errorRate.add(!passed);
         reqDuration.add(res.timings.duration);
         if (passed) {
@@ -108,13 +126,13 @@ export function spikeScenario() {
                 tags: { name: 'DELETE /tasks/:id' },
                 timeout: '15s',
             });
-            check(res, { 'delete: ok': (r) => r.status === 204 });
+            check(res, { 'delete: status 204': (r) => r.status === 204 });
             errorRate.add(res.status !== 204);
             reqDuration.add(res.timings.duration);
         }
     }
 
-    sleep(Math.random() * 0.5 + 0.1); // 100-600ms think time
+    sleep(Math.random() * 0.5 + 0.1);
 }
 
 export function handleSummary(data) {
@@ -126,6 +144,7 @@ export function handleSummary(data) {
         total_requests: m.http_reqs?.values?.count || 0,
         req_per_sec: (m.http_reqs?.values?.rate || 0).toFixed(2),
         error_rate: `${((m.errors?.values?.rate || 0) * 100).toFixed(2)}%`,
+        latency_avg: `${(m.http_req_duration?.values?.avg || 0).toFixed(1)}ms`,
         latency_p50: `${(m.http_req_duration?.values?.['p(50)'] || 0).toFixed(1)}ms`,
         latency_p95: `${(m.http_req_duration?.values?.['p(95)'] || 0).toFixed(1)}ms`,
         latency_p99: `${(m.http_req_duration?.values?.['p(99)'] || 0).toFixed(1)}ms`,
