@@ -5,24 +5,34 @@ datasources:
     type: prometheus
     access: proxy
     url: http://prometheus:9090
+    uid: PBFA97CFB590B2093
     isDefault: true
     editable: true
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+      exemplarTraceIdDestinations:
+        - name: traceID
+          datasourceUid: tempo
 
   - name: Tempo
     type: tempo
     access: proxy
     url: http://tempo:3200
-    editable: true
     uid: tempo
+    editable: true
 
-  - name: Prometheus (Exemplars)
-    type: prometheus
+  - name: Loki
+    type: loki
     access: proxy
-    url: http://prometheus:9090
-    uid: prometheus-exemplars
+    url: http://loki:3100
+    uid: loki
+    editable: true
     jsonData:
-      tracesToLogsV2:
-        datasourceUid: tempo
-      exemplarTraceIdDestinations:
-        - name: traceID
-          datasourceUid: tempo
+      derivedFields:
+        - datasourceUid: tempo
+          matcherRegex: '"trace_id":"([a-f0-9]+)"'
+          name: Trace ID
+          url: "$${__value.raw}"
+          urlDisplayLabel: "View Trace in Tempo"
+          matcherType: regex

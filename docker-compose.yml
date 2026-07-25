@@ -16,13 +16,15 @@ services:
       - GRAPH_POSTGRES__DB_NAME=graph_db
       - GRAPH_REDIS__HOST=redis
       - GRAPH_REDIS__PORT=6379
-      - GRAPH_TRACE__ENDPOINT=tempo:4317
+      - GRAPH_TRACE__ENDPOINT=otel-collector:4317
+      - GRAPH_METRIC__EXPORTER=otlp
+      - GRAPH_METRIC__ENDPOINT=otel-collector:4317
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      tempo:
+      otel-collector:
         condition: service_started
     security_opt:
       - no-new-privileges:true
@@ -32,6 +34,66 @@ services:
       resources:
         limits:
           memory: 256M
+    networks:
+      - task-network
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    container_name: task_manager_otel_collector
+    command: ["--config=/etc/otelcol/config.yml"]
+    volumes:
+      - ./deploy/otel-collector-config.yml:/etc/otelcol/config.yml
+    ports:
+      - "8889:8889"   # Prometheus export
+      - "8888:8888"   # Collector metrics
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - task-network
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: task_manager_loki
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./deploy/loki/loki.yml:/etc/loki/loki.yml
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - task-network
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.4.2
+    container_name: task_manager_promtail
+    command: ["-config.file=/etc/promtail/promtail.yml"]
+    volumes:
+      - ./deploy/promtail/promtail.yml:/etc/promtail/promtail.yml
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log:/var/log:ro
+    ports:
+      - "9080:9080"
+    depends_on:
+      - loki
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 128M
     networks:
       - task-network
     restart: unless-stopped
@@ -135,6 +197,7 @@ services:
     depends_on:
       - prometheus
       - tempo
+      - loki
     security_opt:
       - no-new-privileges:true
     deploy:
@@ -150,6 +213,7 @@ volumes:
   redis_data:
   tempo_data:
   grafana_data:
+  loki_data:
 
 networks:
   task-network:

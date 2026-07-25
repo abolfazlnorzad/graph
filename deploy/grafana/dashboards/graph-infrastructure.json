@@ -1,0 +1,478 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "title": "Application",
+      "url": "/d/graph-application",
+      "type": "link"
+    },
+    {
+      "title": "Logs",
+      "url": "/d/graph-logs",
+      "type": "link"
+    }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "title": "Go Runtime",
+      "type": "row"
+    },
+    {
+      "title": "Goroutines",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "go_goroutines{job=\"task-manager\"}",
+          "legendFormat": "goroutines"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Heap Alloc",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "go_memstats_heap_alloc_bytes{job=\"task-manager\"}",
+          "legendFormat": "heap alloc"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Heap Inuse",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "go_memstats_heap_inuse_bytes{job=\"task-manager\"}",
+          "legendFormat": "heap inuse"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "GC Duration (p95)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(go_gc_duration_seconds_bucket{job=\"task-manager\"}[5m])) * 1000",
+          "legendFormat": "gc p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "GC Cycles",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "rate(go_gc_cycles_total{job=\"task-manager\"}[1m])",
+          "legendFormat": "gc cycles/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "CPU Seconds",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"task-manager\"}[1m])",
+          "legendFormat": "cpu s/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Open FDs",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 17
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "process_open_fds{job=\"task-manager\"}",
+          "legendFormat": "open fds"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "RSS Memory",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 17
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes{job=\"task-manager\"}",
+          "legendFormat": "rss"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "id": 200,
+      "title": "PostgreSQL (via Tempo Metrics Generator)",
+      "type": "row"
+    },
+    {
+      "title": "Service Graph - DB Connections",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "sum(traces_service_graph_request_server_duration_seconds_count{server_name=\"postgres\"}) by (client_service_name)",
+          "legendFormat": "{{client_service_name}} -> postgres"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "DB Call Duration (from Traces)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(traces_spanmetrics_latency_bucket{span_kind=\"CLIENT\", service_name=\"graph\"}[1m])) by (le, operation_name)) * 1000",
+          "legendFormat": "p95 {{operation_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "id": 300,
+      "title": "Redis (via Tempo Metrics Generator)",
+      "type": "row"
+    },
+    {
+      "title": "Redis Call Rate (from Traces)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(traces_spanmetrics_calls_count{span_kind=\"CLIENT\", service_name=\"graph\"}[1m])) by (operation_name)",
+          "legendFormat": "{{operation_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Redis Call Duration (from Traces)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(traces_spanmetrics_latency_bucket{span_kind=\"CLIENT\", service_name=\"graph\"}[1m])) by (le, operation_name)) * 1000",
+          "legendFormat": "p95 {{operation_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "id": 400,
+      "title": "Service Map",
+      "type": "row"
+    },
+    {
+      "title": "Service Graph",
+      "type": "nodeGraph",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "targets": [
+        {
+          "queryType": "serviceMap",
+          "datasourceUid": "tempo"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "graph",
+    "infrastructure"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "title": "Graph - Infrastructure",
+  "uid": "graph-infrastructure",
+  "version": 1
+}

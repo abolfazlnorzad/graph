@@ -116,6 +116,10 @@ export function stressScenario() {
 
         const passed = check(res, {
             'create: status 201': (r) => r.status === 201,
+            'create: has id': (r) => {
+                const id = extractTaskId(r.body);
+                return id !== null && id > 0;
+            },
         });
         errorRate.add(!passed);
         createDuration.add(res.timings.duration);
@@ -138,8 +142,15 @@ export function stressScenario() {
                 timeout: '5s',
             });
 
-            check(res, { 'get: status 200': (r) => r.status === 200 });
-            errorRate.add(res.status !== 200);
+            const passed = check(res, {
+                'get: status 200': (r) => r.status === 200,
+                'get: has task data': (r) => {
+                    try {
+                        return JSON.parse(r.body)?.data?.result?.id > 0;
+                    } catch { return false; }
+                },
+            });
+            errorRate.add(!passed);
             getDuration.add(res.timings.duration);
         }
         sleep(0.15);
@@ -153,8 +164,15 @@ export function stressScenario() {
             { headers: HEADERS, tags: { name: 'GET /tasks (list)' }, timeout: '10s' }
         );
 
-        check(res, { 'list: status 200': (r) => r.status === 200 });
-        errorRate.add(res.status !== 200);
+        const passed = check(res, {
+            'list: status 200': (r) => r.status === 200,
+            'list: has pagination': (r) => {
+                try {
+                    return JSON.parse(r.body)?.data?.result?.pagination?.total >= 0;
+                } catch { return false; }
+            },
+        });
+        errorRate.add(!passed);
         listDuration.add(res.timings.duration);
 
         sleep(0.15);

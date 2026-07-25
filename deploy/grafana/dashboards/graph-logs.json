@@ -1,0 +1,262 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Application", "url": "/d/graph-application", "type": "link" },
+    { "title": "Infrastructure", "url": "/d/graph-infrastructure", "type": "link" }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Log Volume",
+      "type": "row"
+    },
+    {
+      "title": "Log Volume by Level",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({container=\"task_manager_api\"} [1m])) by (detected_level)",
+          "legendFormat": "{{detected_level}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 50, "stacking": { "mode": "normal" } }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "error" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "warn" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "INFO" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "debug" }, "properties": [{ "id": "color", "value": { "fixedColor": "gray", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "title": "Error Logs (last 1h)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 4, "x": 12, "y": 1 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({container=\"task_manager_api\"} | detected_level=\"error\" [1h]))",
+          "legendFormat": "errors"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 50 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Warn Logs (last 1h)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 4, "x": 16, "y": 1 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({container=\"task_manager_api\"} | detected_level=\"warn\" [1h]))",
+          "legendFormat": "warns"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 20 }, { "color": "red", "value": 100 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Total Logs (last 1h)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 4, "x": 20, "y": 1 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({container=\"task_manager_api\"} [1h]))",
+          "legendFormat": "total"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 200,
+      "title": "All Logs (Live Stream)",
+      "type": "row"
+    },
+    {
+      "title": "Live Log Stream",
+      "type": "logs",
+      "gridPos": { "h": 16, "w": 24, "x": 0, "y": 10 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{container=\"task_manager_api\"} | json",
+          "legendFormat": ""
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "format": "json",
+            "source": "Line"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "trace_id" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "View Trace in Tempo",
+                    "url": "",
+                    "internal": {
+                      "datasourceUid": "tempo",
+                      "datasourceName": "Tempo",
+                      "query": {
+                        "queryType": "traceql",
+                        "query": "${__value.text}"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "id": 300,
+      "title": "Error Logs",
+      "type": "row"
+    },
+    {
+      "title": "Error Logs Only",
+      "type": "logs",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 27 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{container=\"task_manager_api\"} | json | detected_level=~\"error|warn\"",
+          "legendFormat": ""
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "format": "json",
+            "source": "Line"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "trace_id" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "View Trace in Tempo",
+                    "url": "",
+                    "internal": {
+                      "datasourceUid": "tempo",
+                      "datasourceName": "Tempo",
+                      "query": {
+                        "queryType": "traceql",
+                        "query": "${__value.text}"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+      "id": 400,
+      "title": "Logs by Operation (JSON parsed)",
+      "type": "row"
+    },
+    {
+      "title": "Logs with Parsed Fields",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 38 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{container=\"task_manager_api\"} | json | line_format \"{{.time}} | {{.detected_level}} | {{.op}} | {{.msg}} | method={{.method}} path={{.path}} status={{.status}}\"",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Time", "desc": true }]
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["graph", "logs"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Graph - Logs",
+  "uid": "graph-logs",
+  "version": 2
+}

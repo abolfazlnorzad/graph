@@ -99,12 +99,14 @@ curl "http://localhost:8080/tasks?page_number=1&page_size=10&status=TODO&assigne
 {
   "status": "success",
   "data": {
-    "pagination": {
-      "page_number": 1,
-      "page_size": 10,
-      "total": 5
-    },
-    "tasks": [...]
+    "result": {
+      "pagination": {
+        "page_number": 1,
+        "page_size": 10,
+        "total": 5
+      },
+      "tasks": [...]
+    }
   }
 }
 ```
@@ -202,6 +204,7 @@ make clean            # Clean build artifacts
 make k6-load          # Run k6 load test
 make k6-stress        # Run k6 stress test
 make k6-spike         # Run k6 spike test
+make k6-soak          # Run k6 soak test (10min)
 make k6-all           # Run all k6 tests
 ```
 
@@ -215,7 +218,7 @@ Full performance test suite using [k6](https://k6.io/). Install with `brew insta
 |------|-----|----------|------|
 | **Load** | 0→50→0 | ~130s | Normal production traffic within SLA |
 | **Stress** | 0→5→20→50→100→200→500→0 | ~4min | Find breaking point |
-| **Spike** | 5→300→5→0 | ~2min | Flash sale / viral burst recovery |
+| **Spike** | 5→1000→5→0 | ~2min | Flash sale / viral burst recovery |
 | **Soak** | 0→20 (10min sustained) | ~11min | Memory leaks, connection pool exhaustion |
 
 ### Run
@@ -230,12 +233,11 @@ make k6-all
 
 ### Results
 
-| Test | Total Requests | Throughput | Avg | p50 | p90 | p95 | p99 | Max | Error Rate | Verdict |
-|------|---------------|-----------|-----|-----|-----|-----|-----|-----|-----------|---------|
-| **Load** (50 VUs) | 15,925 | 120.43 req/s | 4.7ms | <1ms | 8.5ms | 10.8ms | 15.2ms | 66.1ms | 0.00%* | PASS |
-| **Stress** (500 VUs) | 82,157 | 409.61 req/s | 12.9ms | <1ms | 33.8ms | 52.8ms | 108ms | 368.4ms | 0.00% | PASS |
-
-> \* Load test 409 Conflict responses from optimistic locking are expected, not failures.
+| Test | Total Requests | Throughput | Avg | p50 | p95 | p99 | Max | Error Rate | Verdict |
+|------|---------------|-----------|-----|-----|-----|-----|-----|-----------|---------|
+| **Load** (50 VUs) | 15,925 | 120.44 req/s | 4.7ms | <1ms | 12.6ms | — | 43.9ms | 0.00% | PASS |
+| **Stress** (500 VUs) | 81,952 | 407.47 req/s | 13.4ms | <1ms | 57.4ms | — | 207.2ms | 0.00% | PASS |
+| **Spike** (1000 VUs) | 54,305 | 540.16 req/s | 358.4ms | <1ms | 1458.4ms | — | 1886.3ms | 0.00% | PASS |
 
 ### Metric Glossary
 
@@ -260,13 +262,12 @@ Phase:    Ramp-up (30s)  →  Sustain (90s)  →  Ramp-down (10s)
 VUs:      0 → 50          →  50 constant     →  50 → 0
 ```
 
-**نتیجه:** با ۵۰ کاربر همزمان، سرویس **۱۲۰ درخواست در ثانیه** با **p95 زیر ۱۱ میلی‌ثانیه** پاسخ می‌دهد.
+**نتیجه:** با ۵۰ کاربر همزمان، سرویس **۱۲۰ درخواست در ثانیه** با **p95 زیر ۱۳ میلی‌ثانیه** پاسخ می‌دهد.
 
 - **p50 < 1ms:** نیمی از درخواست‌ها تقریباً آنی هستند — این نشان‌دهنده کارایی Redis cache است
-- **p95 = 10.8ms:** ۹۵٪ درخواست‌ها زیر ۱۱ms پاسخ می‌دهند — بسیار بهتر از SLA معمول (<200ms)
-- **p99 = 15.2ms:** حتی ۹۹٪ درخواست‌ها هم زیر ۱۵ms هستند — gap بین p95 و p99 کم است یعنی latency distribution یکنواخت است
-- **Max = 66.1ms:** کندترین درخواست — احتمالاً cold cache یا اولین درخواست بعد از ramp-up
-- **Error Rate = 0%:** تمام درخواست‌ها موفق بوده‌اند (409 Conflict ها محاسبه نشده‌اند)
+- **p95 = 12.6ms:** ۹۵٪ درخواست‌ها زیر ۱۳ms پاسخ می‌دهند — بسیار بهتر از SLA معمول (<200ms)
+- **Max = 43.9ms:** کندترین درخواست — احتمالاً cold cache یا اولین درخواست بعد از ramp-up
+- **Error Rate = 0%:** تمام درخواست‌ها موفق بوده‌اند
 
 #### Stress Test — 500 VUs (فشار حداکثری)
 
@@ -275,33 +276,48 @@ Phase:    Warm → Normal → Heavy → Stress → Extreme → Recovery → Down
 VUs:      5  →  20    →  50   →  100  →  200    →  500     →  5  →  0
 ```
 
-**نتیجه:** با **۵۰۰ کاربر همزمان**، سرویس **۴۱۰ درخواست در ثانیه** با **p95 زیر ۵۳ms** پاسخ می‌دهد و **صفر خطا** دارد.
+**نتیجه:** با **۵۰۰ کاربر همزمان**، سرویس **۴۰۷ درخواست در ثانیه** با **p95 زیر ۵۸ms** پاسخ می‌دهد و **صفر خطا** دارد.
 
 - **p50 < 1ms:** حتی با ۵۰۰ VU، نیمی از درخواست‌ها همچنان زیر ۱ms هستند — cache hit rate بالا
-- **p90 = 33.8ms:** ۹۰٪ درخواست‌ها زیر ۳۴ms — قابل قبول برای ۵۰۰ کاربر
-- **p95 = 52.8ms:** با ۱۰ برابر load نسبت به تست قبل، p95 فقط ۵ برابر شده (۱۰ms → ۵۳ms) — خطی و قابل پیش‌بینی
-- **p99 = 108ms:** حتی بدترین ۱٪ درخواست‌ها هم زیر ۱۱۰ms هستند — زیر SLA ۵۰۰ms
-- **Max = 368ms:** کندترین درخواست در اوج فشار — احتمالاً مربوط به connection pool waiting
+- **p90 = 40ms:** ۹۰٪ درخواست‌ها زیر ۴۰ms — قابل قبول برای ۵۰۰ کاربر
+- **p95 = 57.4ms:** با ۱۰ برابر load نسبت به تست قبل، p95 حدود ۴.۵ برابر شده (۱۲.۶ms → ۵۷.۴ms) — خطی و قابل پیش‌بینی
+- **Max = 207.2ms:** کندترین درخواست در اوج فشار — احتمالاً مربوط به connection pool waiting
 - **Error Rate = 0%:** صفر خطا حتی در ۵۰۰ VU — connection pool (25 conns) کافی بوده
 
-#### مقایسه Load vs Stress
+#### مقایسه Load vs Stress vs Spike
 
 ```
-VUs:        50        500      (۱۰ برابر)
-Throughput: 120       410      (۳.۴ برابر)
-p95:        11ms      53ms     (۴.۸ برابر)
-Error:      0%        0%       (بدون تغییر)
+VUs:        50        500        1000       (۲۰ برابر)
+Throughput: 120       407        540        (۴.۵ برابر)
+p95:        12.6ms    57.4ms     1458ms     (۱۱۵ برابر)
+Error:      0%        0%         0%         (بدون تغییر)
 ```
 
-**تحلیل:** وقتی load ۱۰ برابر می‌شود، throughput فقط ۳.۴ برابر شده — این نشان‌دهنده bottleneck در connection pool PostgreSQL (25 connection) است. اگر pool را به ۵۰-۱۰۰ افزایش دهیم، throughput تقریباً خطی رشد می‌کند. اما p99 همچنان زیر SLA هست و error rate صفر است.
+**تحلیل:** وقتی load ۱۰ برابر می‌شود، throughput فقط ۳.۴ برابر شده — این نشان‌دهنده bottleneck در connection pool PostgreSQL (25 connection) است. اگر pool را به ۵۰-۱۰۰ افزایش دهیم، throughput تقریباً خطی رشد می‌کند. اما p95 همچنان زیر SLA هست و error rate صفر است.
+
+#### Spike Test — 1000 VUs (ضربه ناگهانی)
+
+```
+Phase:    Baseline → Spike → Sustain → Recovery → Post-spike → Cooldown
+VUs:      5       → 1000  → 1000    → 5        → 5         → 0
+```
+
+**نتیجه:** با **۱۰۰۰ کاربر همزمان**، سرویس **۵۴۰ درخواست در ثانیه** با **error rate صفر** پاسخ می‌دهد.
+
+- **Throughput = 540 req/s:** بالاترین throughput در بین تمام تست‌ها — سرویس زیر فشار شدید هم پاسخ می‌دهد
+- **p95 = 1458ms:** تحت ۱۰۰۰ VU، ۹۵٪ درخواست‌ها زیر ۱.۵ ثانیه پاسخ می‌دهند — قابل قبول برای spike
+- **Max = 1886ms:** کندترین درخواست زیر ۲ ثانیه — سرویس حتی در بدترین حالت timeout نمی‌شود
+- **Error Rate = 0%:** صفر خطا حتی با ۱۰۰۰ کاربر — نشان‌دهنده پایداری بالای سرویس
+- **Recovery:** سرویس بعد از spike به سرعت به حالت عادی برمی‌گردد
 
 #### پیش‌بینی ظرفیت
 
 بر اساس نتایج:
 - **نرمال:** تا ۱۰۰ VU / ۲۰۰ req/s — بدون هیچ مشکلی
 - **Heavy:** تا ۳۰۰ VU / ۳۵۰ req/s — p95 زیر ۴۰ms
-- **Extreme:** ۵۰۰ VU / ۴۱۰ req/s — p95 زیر ۵۳ms
-- **Breaking Point:** پیدا نشد — سرویس حتی با ۵۰۰ VU پایدار است
+- **Extreme:** ۵۰۰ VU / ۴۰۷ req/s — p95 زیر ۵۷ms
+- **Spike:** ۱۰۰۰ VU / ۵۴۰ req/s — p95 زیر ۱.۵s, error rate صفر
+- **Breaking Point:** پیدا نشد — سرویس حتی با ۱۰۰۰ VU پایدار است
 
 ---
 

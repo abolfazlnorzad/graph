@@ -4,14 +4,16 @@ RUN apk update && apk add --no-cache git ca-certificates tzdata
 
 RUN adduser -D -g '' -u 1001 appuser
 
+ENV GOPROXY=goproxy.cn
+
 WORKDIR /app
 
 COPY go.mod go.sum ./
-COPY vendor ./vendor
+RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -mod=vendor -a -installsuffix cgo -ldflags="-w -s" -o /app/bin/server cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -a -installsuffix cgo -ldflags="-w -s" -o /app/bin/server cmd/main.go
 
 # ==========================================
 # Stage 2: Final (Production Image)
