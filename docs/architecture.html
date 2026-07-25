@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Graph Task Manager — Architecture</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            background: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .container {
+            padding: 40px;
+            max-width: 1200px;
+        }
+        h1 {
+            text-align: center;
+            color: #1a1a2e;
+            font-size: 28px;
+            margin-bottom: 32px;
+        }
+        .mermaid {
+            display: flex;
+            justify-content: center;
+        }
+        .note {
+            text-align: center;
+            color: #666;
+            font-size: 13px;
+            margin-top: 24px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Graph Task Manager — System Architecture</h1>
+    <div class="mermaid">
+graph TD
+    Client["🌐 Client / Web / Mobile"]
+    
+    subgraph "Gin HTTP Server (port 8080)"
+        Middleware["Middleware Layer<br/>ErrorHandler | OTelMetrics | RequestLogger"]
+        Router["Gin Router"]
+        Swagger["Swagger UI<br/>/swagger/*"]
+        MetricsEP["Prometheus<br/>/metrics"]
+    end
+
+    subgraph "Delivery Layer"
+        Handler["Task Handler<br/>Create | Get | Update | Delete | List"]
+    end
+
+    subgraph "Service Layer"
+        Service["Service<br/>Business Logic + Validation<br/>Cache-Aside + SingleFlight"]
+        Validator["Validator<br/>ozzo-validation"]
+    end
+
+    subgraph "Repository Layer"
+        PostgresRepo["PostgreSQL Repository<br/>CRUD + Optimistic Locking<br/>Soft Delete"]
+        RedisCache["Redis Cache Store<br/>Set | Get | Delete<br/>DeleteByPrefix | TTL"]
+    end
+
+    subgraph "Infrastructure"
+        PostgresDB[("PostgreSQL 16<br/>tasks + task_audit_logs")]
+        RedisDB[("Redis 7<br/>Cache Store")]
+        Prometheus["Prometheus<br/>Metrics Scraping"]
+        OTelCollector["OTel Collector<br/>Traces + Metrics"]
+    end
+
+    Client -->|"HTTP REST"| Router
+    Router --> Middleware
+    Middleware --> Handler
+    Swagger -.-> Router
+    MetricsEP -.-> Router
+    Handler --> Validator
+    Handler --> Service
+    Service --> PostgresRepo
+    Service --> RedisCache
+    PostgresRepo -->|"SQL Queries"| PostgresDB
+    RedisCache -->|"Redis Commands"| RedisDB
+    Service -.->|"OTel Spans"| OTelCollector
+    Middleware -.->|"request_latency<br/>requests_total"| Prometheus
+    Service -.->|"tasks_count<br/>task_*_total"| Prometheus
+
+    style Client fill:#4fc3f7,stroke:#0288d1,color:#000
+    style PostgresDB fill:#81c784,stroke:#388e3c,color:#000
+    style RedisDB fill:#ef5350,stroke:#c62828,color:#fff
+    style Prometheus fill:#ff9800,stroke:#e65100,color:#000
+    style OTelCollector fill:#ab47bc,stroke:#7b1fa2,color:#fff
+    style Service fill:#fff9c4,stroke:#f9a825,color:#000
+    style Handler fill:#e3f2fd,stroke:#1565c0,color:#000
+    style PostgresRepo fill:#c8e6c9,stroke:#2e7d32,color:#000
+    style RedisCache fill:#ffcdd2,stroke:#c62828,color:#000
+    style Middleware fill:#f3e5f5,stroke:#7b1fa2,color:#000
+    style Validator fill:#fff3e0,stroke:#e65100,color:#000
+    style Swagger fill:#e8eaf6,stroke:#3949ab,color:#000
+    style MetricsEP fill:#fbe9e7,stroke:#bf360c,color:#000
+    </div>
+    <p class="note">To export as PNG: open this file in Chrome, use DevTools → Elements → Screenshot, or use <code>npx @mermaid-js/mermaid-cli -i architecture.mmd -o architecture.png -b white</code></p>
+</div>
+<script>
+    mermaid.initialize({
+        startOnLoad: true,
+        theme: 'base',
+        themeVariables: {
+            fontSize: '14px',
+            fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif'
+        },
+        flowchart: {
+            curve: 'basis',
+            padding: 20,
+            htmlLabels: true,
+            useMaxWidth: true
+        }
+    });
+</script>
+</body>
+</html>

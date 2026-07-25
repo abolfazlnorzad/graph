@@ -3,6 +3,7 @@ package taskhandler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/abolfazlnorzad/graph/delivery/httpserver/middleware"
 	"github.com/abolfazlnorzad/graph/entity"
@@ -167,7 +168,7 @@ func (h Handler) ListTasks(c *gin.Context) {
 	}
 
 	if statusStr := c.Query("status"); statusStr != "" {
-		status := entity.TaskStatus(statusStr)
+		status := entity.TaskStatus(strings.ToUpper(statusStr))
 		req.Filter.Status = &status
 	}
 	if assignee := c.Query("assignee"); assignee != "" {

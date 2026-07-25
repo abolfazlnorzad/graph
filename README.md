@@ -7,6 +7,17 @@ REST API for managing tasks (do-to). Built with **Go**, **Gin**, **PostgreSQL**,
 
 ---
 
+## Architecture
+
+![Architecture Diagram](docs/architecture.png)
+
+> For interactive version, open `docs/architecture.html` in a browser. To regenerate from source, install [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) and run:
+> ```bash
+> npx @mermaid-js/mermaid-cli -i docs/architecture.mmd -o docs/architecture.png -b white -w 1200
+> ```
+
+---
+
 ## Quick Start
 
 ### Prerequisites
@@ -189,5 +200,3 @@ make swagger          # Regenerate swagger docs
 make mocks            # Regenerate mocks
 make clean            # Clean build artifacts
 ```
-
----

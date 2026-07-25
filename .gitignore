@@ -172,3 +172,8 @@ Temporary Items
 
 # End of https://www.toptal.com/developers/gitignore/api/macos,goland,go
 logs/app.log
+vendor/
+coverage.out
+coverage.html
+cpu.prof
+mem.prof

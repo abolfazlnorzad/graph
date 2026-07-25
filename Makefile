@@ -1,4 +1,4 @@
-.PHONY: help build run test test-unit test-integration test-coverage lint vet tidy migrate up down docker-build docker-up docker-down swagger clean
+.PHONY: help build run test test-unit test-integration test-coverage test-bench test-race lint vet tidy migrate up down docker-build docker-up docker-down swagger clean k6-load k6-stress k6-spike k6-soak k6-all
 
 # Default target
 help: ## Show this help message
@@ -33,6 +33,11 @@ test-coverage: ## Run tests with coverage report
 
 test-race: ## Run tests with race detector
 	go test ./... -race
+
+test-bench: ## Run benchmarks and generate pprof profiles
+	go test -bench=. -benchmem -cpuprofile=cpu.prof -memprofile=mem.prof -benchtime=3s -run=^$ ./service/
+	@echo "Profiles generated: cpu.prof, mem.prof"
+	@echo "View: go tool pprof cpu.prof"
 
 # ==================== Code Quality ====================
 
@@ -88,6 +93,33 @@ mocks: ## Regenerate mocks
 	go generate ./service/...
 
 # ==================== Clean ====================
+
+loadtest: ## Run load test against running service (usage: make loadtest URL=http://localhost:8080 CONC=10 N=100)
+	./loadtest.sh $(URL) $(CONC) $(N)
+
+# ==================== k6 Tests ====================
+
+k6-load: ## Run k6 load test (sustained traffic, 100s)
+	k6 run loadtest/k6_load.js
+
+k6-stress: ## Run k6 stress test (ramp to 200 VUs, ~4min)
+	k6 run loadtest/k6_stress.js
+
+k6-spike: ## Run k6 spike test (sudden 300 VUs burst, ~2min)
+	k6 run loadtest/k6_spike.js
+
+k6-soak: ## Run k6 soak test (sustained 20 VUs for 10min)
+	k6 run loadtest/k6_soak.js
+
+k6-all: ## Run all k6 tests sequentially
+	@echo "Running Load Test..."
+	k6 run loadtest/k6_load.js
+	@echo "\nRunning Stress Test..."
+	k6 run loadtest/k6_stress.js
+	@echo "\nRunning Spike Test..."
+	k6 run loadtest/k6_spike.js
+	@echo "\nRunning Soak Test..."
+	k6 run loadtest/k6_soak.js
 
 clean: ## Clean build artifacts
 	rm -rf bin/

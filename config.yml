@@ -28,8 +28,8 @@ postgres:
   password: graph
   db_name: graph_db
   ssl_mode: disable
-  max_conns: 10
-  min_conns: 2
+  max_conns: 25
+  min_conns: 5
   max_conn_lifetime: 3600
   max_conn_idle_time: 600
   health_check_period: 30
