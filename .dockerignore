@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Go build artifacts
+bin/
+*.exe
+*.test
+*.out
+*.prof
+
+# Test & coverage
+coverage.out
+coverage.html
+
+# Docker
+docker-compose.yml
+
+# Documentation (not needed in image)
+README.md
+ARCHITECTURE.md
+PERFORMANCE_REPORT.md
+docs/architecture.html
+docs/architecture.mmd
+docs/architecture.png
+LICENSE
+
+# Load test (not needed in image)
+loadtest/
+
+# Deploy configs (app uses config.yml, not these)
+deploy/
+
+# Logs
+logs/
+
+# Makefile
+Makefile
+
+# macOS
+.DS_Store
+
+# Vendor (Dockerfile copies it explicitly)
+# vendor/
+
+# Config that will be overridden by env vars
+# config.yml is needed in image, so keep it

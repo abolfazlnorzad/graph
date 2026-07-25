@@ -1,16 +1,16 @@
 {
-  "timestamp": "2026-07-25T11:43:54.280Z",
+  "timestamp": "2026-07-25T12:53:54.111Z",
   "test_type": "load",
   "duration": "2.5s",
-  "total_requests": 16009,
-  "req_per_sec": "121.40",
+  "total_requests": 15925,
+  "req_per_sec": "120.43",
   "error_rate": "16.67%",
   "latency": {
-    "avg": "3.6ms",
+    "avg": "4.7ms",
     "p50": "0.0ms",
-    "p95": "9.0ms",
+    "p95": "10.8ms",
     "p99": "0.0ms",
-    "max": "45.0ms"
+    "max": "66.1ms"
   },
   "vus": {
     "max": 50
