@@ -16,11 +16,14 @@ services:
       - GRAPH_POSTGRES__DB_NAME=graph_db
       - GRAPH_REDIS__HOST=redis
       - GRAPH_REDIS__PORT=6379
+      - GRAPH_TRACE__ENDPOINT=tempo:4317
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      tempo:
+        condition: service_started
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -82,17 +85,62 @@ services:
     restart: unless-stopped
 
   prometheus:
-    image: prom/prometheus:v2.45.0
+    image: prom/prometheus:v3
     container_name: task_manager_prometheus
     ports:
       - "9090:9090"
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    user: "nobody"
     security_opt:
       - no-new-privileges:true
+    networks:
+      - task-network
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.4.1
+    container_name: task_manager_tempo
+    command: ["-config.file=/etc/tempo-config.yml"]
+    volumes:
+      - ./deploy/tempo/tempo.yml:/etc/tempo-config.yml
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"   # Tempo HTTP
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - task-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.0.1-security-01
+    container_name: task_manager_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
-      - app
+      - prometheus
+      - tempo
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     networks:
       - task-network
     restart: unless-stopped
@@ -100,6 +148,8 @@ services:
 volumes:
   pg_data:
   redis_data:
+  tempo_data:
+  grafana_data:
 
 networks:
   task-network:

@@ -41,7 +41,7 @@ func main() {
 	var cfg config.Config
 	if err := config.Load(config.Option{
 		YamlFilePath: "config.yml",
-		Prefix:       "GRAPH",
+		Prefix:       "GRAPH_",
 		Delimiter:    ".",
 		Separator:    "__",
 	}, &cfg); err != nil {

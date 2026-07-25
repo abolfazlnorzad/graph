@@ -4,6 +4,8 @@
 
 The project follows **Clean Architecture** to separate concerns:
 
+![System Architecture](docs/architecture.png)
+
 ```mermaid
 graph TD
     Client[Client / Web / Mobile] -->|HTTP REST| Handler(Delivery / HTTP Layer)

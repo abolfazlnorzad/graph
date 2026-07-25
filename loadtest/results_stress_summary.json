@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-07-25T11:47:34.352Z",
+  "test_type": "stress",
+  "total_duration": "1.8s",
+  "total_requests": 83542,
+  "req_per_sec": "416.74",
+  "error_rate": "0.00%",
+  "max_vus": 500,
+  "latency": {
+    "avg": "8.2ms",
+    "p50": "0.0ms",
+    "p90": "18.8ms",
+    "p95": "27.0ms",
+    "p99": "0.0ms",
+    "max": "362.1ms"
+  },
+  "failed_thresholds": [],
+  "verdict": "PASS"
+}

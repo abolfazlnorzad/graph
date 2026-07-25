@@ -7,11 +7,11 @@ RUN adduser -D -g '' -u 1001 appuser
 WORKDIR /app
 
 COPY go.mod go.sum ./
-RUN go mod download
+COPY vendor ./vendor
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -a -installsuffix cgo -ldflags="-w -s" -o /app/bin/server cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -mod=vendor -a -installsuffix cgo -ldflags="-w -s" -o /app/bin/server cmd/main.go
 
 # ==========================================
 # Stage 2: Final (Production Image)
@@ -30,6 +30,7 @@ COPY --from=builder --chown=appuser:appuser /app/bin/server .
 COPY --from=builder --chown=appuser:appuser /app/config.yml .
 COPY --from=builder --chown=appuser:appuser /app/docs ./docs
 COPY --from=builder --chown=appuser:appuser /app/repository/migrations ./migrations
+RUN mkdir -p /app/logs && chown appuser:appuser /app/logs
 
 USER appuser:appuser
 
