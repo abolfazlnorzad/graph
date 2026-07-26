@@ -67,8 +67,6 @@ definitions:
         $ref: '#/definitions/entity.TaskStatus'
       title:
         type: string
-      version:
-        type: integer
     type: object
   param.PaginationResponse:
     properties:
@@ -253,6 +251,16 @@ paths:
         in: path
         name: id
         required: true
+        type: integer
+      - default: 1
+        description: Audit log page number
+        in: query
+        name: audit_page
+        type: integer
+      - default: 10
+        description: Audit log page size
+        in: query
+        name: audit_page_size
         type: integer
       produces:
       - application/json

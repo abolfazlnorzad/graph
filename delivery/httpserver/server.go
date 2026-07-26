@@ -45,6 +45,7 @@ func (s *Server) Serve() {
 
 	s.Router.Use(gin.Recovery())
 
+	// TODO(prod): Gate /metrics and /swagger behind authentication or internal network restriction before production.
 	s.Router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	s.Router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	s.handler.SetRoutes(s.Router)

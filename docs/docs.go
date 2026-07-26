@@ -182,6 +182,20 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Audit log page number",
+                        "name": "audit_page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "Audit log page size",
+                        "name": "audit_page_size",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -422,9 +436,6 @@ const docTemplate = `{
                 },
                 "title": {
                     "type": "string"
-                },
-                "version": {
-                    "type": "integer"
                 }
             }
         },

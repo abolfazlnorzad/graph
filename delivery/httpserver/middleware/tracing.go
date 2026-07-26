@@ -29,6 +29,7 @@ func OTelTracingMiddleware() gin.HandlerFunc {
 					return "http"
 				}()),
 				attribute.String("http.user_agent", c.Request.UserAgent()),
+				// TODO(prod): Remove or mask client IP before production — this is PII and may violate GDPR/CCPA.
 				attribute.String("net.peer.ip", c.ClientIP()),
 			),
 		)

@@ -34,7 +34,6 @@ type CreateTaskRequest struct {
 	Description *string           `json:"description"`
 	Status      entity.TaskStatus `json:"status"`
 	Assignee    *string           `json:"assignee"`
-	Version     int16             `json:"version"`
 }
 
 type CreateTaskResponse struct {

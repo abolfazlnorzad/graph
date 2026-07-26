@@ -175,7 +175,7 @@ func (r *TaskRepo) ListTask(ctx context.Context, criteria service.ListTaskCriter
 	}
 	defer rows.Close()
 
-	var tasks []entity.Task
+	tasks := make([]entity.Task, 0, min(total, int64(criteria.PageSize)))
 	for rows.Next() {
 		var t entity.Task
 		err := rows.Scan(

@@ -24,6 +24,7 @@ trace:
 postgres:
   host: localhost
   port: 5432
+  # TODO(prod): Replace hardcoded credentials with environment variables or a secrets manager before production.
   user: graph
   password: graph
   db_name: graph_db

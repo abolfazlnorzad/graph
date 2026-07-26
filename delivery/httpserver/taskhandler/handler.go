@@ -60,7 +60,9 @@ func (h Handler) CreateTask(c *gin.Context) {
 // @Description  Retrieve a single task by its ID
 // @Tags         tasks
 // @Produce      json
-// @Param        id   path      int  true  "Task ID"
+// @Param        id              path      int  true  "Task ID"
+// @Param        audit_page      query     int  false "Audit log page number"     default(1)
+// @Param        audit_page_size query     int  false "Audit log page size"       default(10)
 // @Success      200  {object}  middleware.Envelope{data=param.TaskResponse}
 // @Failure      404  {object}  middleware.Envelope
 // @Failure      500  {object}  middleware.Envelope
@@ -72,7 +74,14 @@ func (h Handler) GetTask(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.svc.GetTask(c.Request.Context(), param.GetTaskByIDRequest{ID: entity.ID(id)})
+	auditPage, _ := strconv.Atoi(c.DefaultQuery("audit_page", "1"))
+	auditPageSize, _ := strconv.Atoi(c.DefaultQuery("audit_page_size", "10"))
+
+	resp, err := h.svc.GetTask(c.Request.Context(), param.GetTaskByIDRequest{
+		ID:            entity.ID(id),
+		AuditPage:     auditPage,
+		AuditPageSize: auditPageSize,
+	})
 	if err != nil {
 		middleware.ErrorResponse(c, err)
 		return

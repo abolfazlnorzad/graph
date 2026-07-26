@@ -165,7 +165,10 @@ func (s Service) CreateTask(ctx context.Context, req param.CreateTaskRequest) (p
 	taskResp := mapTaskEntityToTaskResponse(t)
 
 	auditLogs, _, auditErr := s.repo.GetAuditLogsByTaskID(ctx, t.ID, 1, 10)
-	if auditErr == nil {
+	if auditErr != nil {
+		trace.RecordError(span, auditErr)
+		reqLogger.WarnContext(ctx, "failed to fetch audit logs after create", slog.Any("error", auditErr))
+	} else {
 		auditResponses := make([]param.AuditLogResponse, 0, len(auditLogs))
 		for _, l := range auditLogs {
 			auditResponses = append(auditResponses, param.AuditLogResponse{
@@ -300,7 +303,10 @@ func (s Service) UpdateTask(ctx context.Context, req param.UpdateTaskRequest) (p
 	taskResp := mapTaskEntityToTaskResponse(existing)
 
 	auditLogs, _, auditErr := s.repo.GetAuditLogsByTaskID(ctx, existing.ID, 1, 10)
-	if auditErr == nil {
+	if auditErr != nil {
+		trace.RecordError(span, auditErr)
+		reqLogger.WarnContext(ctx, "failed to fetch audit logs after update", slog.Any("error", auditErr))
+	} else {
 		auditResponses := make([]param.AuditLogResponse, 0, len(auditLogs))
 		for _, l := range auditLogs {
 			auditResponses = append(auditResponses, param.AuditLogResponse{
