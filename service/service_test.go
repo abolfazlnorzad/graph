@@ -1226,4 +1226,78 @@ func TestService_ListTask(t *testing.T) {
 		assert.Len(t, resp.Tasks, 1)
 		assert.Equal(t, "Task 1", resp.Tasks[0].Title)
 	})
+
+	t.Run("Success - Invalid page size falls back to default", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		req := param.ListTasksRequest{
+			Pagination: param.PaginationRequest{PageNumber: 1, PageSize: 999},
+		}
+
+		// Cache key uses sanitized page_size=25 (default)
+		mockCache.On("Get", mock.Anything, "tasks:list:page:1:size:25:status::assignee:", mock.AnythingOfType("*param.ListTasksResponse")).
+			Return(errors.New("cache miss")).Twice()
+
+		dbTasks := []entity.Task{
+			{ID: 1, Title: "Task 1", Status: entity.StatusTodo, Version: 1},
+		}
+
+		mockRepo.On("ListTask", mock.Anything, mock.MatchedBy(func(c service.ListTaskCriteria) bool {
+			return c.PageNumber == 1 && c.PageSize == 25
+		})).Return(dbTasks, int64(1), nil).Once()
+
+		mockCache.On("Set", mock.Anything, "tasks:list:page:1:size:25:status::assignee:", mock.AnythingOfType("param.ListTasksResponse"), 2*time.Minute).
+			Return(nil).Once()
+
+		mockMetrics.On("RecordTaskListedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskListed", mock.Anything, "success_db").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.ListTask(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Len(t, resp.Tasks, 1)
+		assert.Equal(t, 25, resp.Pagination.PageSize)
+		assert.Equal(t, 1, resp.Pagination.PageNumber)
+	})
+
+	t.Run("Success - Invalid page number falls back to default", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		req := param.ListTasksRequest{
+			Pagination: param.PaginationRequest{PageNumber: 0, PageSize: 10},
+		}
+
+		// Cache key uses sanitized page_number=1 (default)
+		mockCache.On("Get", mock.Anything, "tasks:list:page:1:size:10:status::assignee:", mock.AnythingOfType("*param.ListTasksResponse")).
+			Return(errors.New("cache miss")).Twice()
+
+		dbTasks := []entity.Task{
+			{ID: 1, Title: "Task 1", Status: entity.StatusTodo, Version: 1},
+		}
+
+		mockRepo.On("ListTask", mock.Anything, mock.MatchedBy(func(c service.ListTaskCriteria) bool {
+			return c.PageNumber == 1 && c.PageSize == 10
+		})).Return(dbTasks, int64(1), nil).Once()
+
+		mockCache.On("Set", mock.Anything, "tasks:list:page:1:size:10:status::assignee:", mock.AnythingOfType("param.ListTasksResponse"), 2*time.Minute).
+			Return(nil).Once()
+
+		mockMetrics.On("RecordTaskListedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskListed", mock.Anything, "success_db").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.ListTask(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Len(t, resp.Tasks, 1)
+		assert.Equal(t, 10, resp.Pagination.PageSize)
+		assert.Equal(t, 1, resp.Pagination.PageNumber)
+	})
 }

@@ -515,10 +515,13 @@ func (s Service) ListTask(ctx context.Context, req param.ListTasksRequest) (para
 		span.End()
 	}()
 
+	pageSize := req.Pagination.GetPageSize()
+	pageNumber := req.Pagination.GetPageNumber()
+
 	reqLogger := s.logger.With(
 		slog.String("op", op),
-		slog.Int("page_number", req.Pagination.PageNumber),
-		slog.Int("page_size", req.Pagination.PageSize),
+		slog.Int("page_number", pageNumber),
+		slog.Int("page_size", pageSize),
 	)
 
 	var statusStr, assigneeStr string
@@ -530,7 +533,7 @@ func (s Service) ListTask(ctx context.Context, req param.ListTasksRequest) (para
 	}
 
 	cacheKey := fmt.Sprintf("tasks:list:page:%d:size:%d:status:%s:assignee:%s",
-		req.Pagination.PageNumber, req.Pagination.PageSize, statusStr, assigneeStr)
+		pageNumber, pageSize, statusStr, assigneeStr)
 
 	var cachedResp param.ListTasksResponse
 	if err := s.cache.Get(ctx, cacheKey, &cachedResp); err == nil {
@@ -551,8 +554,8 @@ func (s Service) ListTask(ctx context.Context, req param.ListTasksRequest) (para
 		}
 
 		criteria := ListTaskCriteria{
-			PageNumber: req.Pagination.PageNumber,
-			PageSize:   req.Pagination.PageSize,
+			PageNumber: pageNumber,
+			PageSize:   pageSize,
 			Status:     req.Filter.Status,
 			Assignee:   req.Filter.Assignee,
 		}
@@ -570,8 +573,8 @@ func (s Service) ListTask(ctx context.Context, req param.ListTasksRequest) (para
 		resp := param.ListTasksResponse{
 			Tasks: respTasks,
 			Pagination: param.PaginationResponse{
-				PageSize:   req.Pagination.PageSize,
-				PageNumber: req.Pagination.PageNumber,
+				PageSize:   pageSize,
+				PageNumber: pageNumber,
 				Total:      total,
 			},
 		}
