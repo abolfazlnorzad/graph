@@ -13,6 +13,7 @@ import (
 	"github.com/abolfazlnorzad/graph/pkg/trace"
 	"github.com/abolfazlnorzad/graph/validation"
 	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -30,6 +31,9 @@ type Repository interface {
 	DeleteTask(ctx context.Context, id entity.ID) error
 	GetTask(ctx context.Context, id entity.ID) (entity.Task, error)
 	ListTask(ctx context.Context, criteria ListTaskCriteria) ([]entity.Task, int64, error)
+	GetAuditLogsByTaskID(ctx context.Context, taskID entity.ID, page, size int) ([]entity.TaskAuditLog, int64, error)
+	CreateTaskWithAuditLog(ctx context.Context, t entity.Task, auditLog entity.TaskAuditLog) (entity.Task, error)
+	UpdateTaskWithAuditLog(ctx context.Context, t entity.Task, auditLog entity.TaskAuditLog) error
 }
 
 //go:generate mockery --name=CacheStore --output=./mocks --outpkg=mocks
@@ -111,12 +115,21 @@ func (s Service) CreateTask(ctx context.Context, req param.CreateTaskRequest) (p
 		return param.CreateTaskResponse{}, err
 	}
 
-	t, err := s.repo.CreateTask(ctx, entity.Task{
+	t, err := s.repo.CreateTaskWithAuditLog(ctx, entity.Task{
 		Title:       req.Title,
 		Description: req.Description,
 		Status:      req.Status,
 		Assignee:    req.Assignee,
 		Version:     1,
+	}, entity.TaskAuditLog{
+		Action: entity.ActionCreate,
+		NewState: map[string]any{
+			"title":       req.Title,
+			"description": req.Description,
+			"status":      req.Status,
+			"assignee":    req.Assignee,
+			"version":     1,
+		},
 	})
 
 	if err != nil {
@@ -201,6 +214,8 @@ func (s Service) UpdateTask(ctx context.Context, req param.UpdateTaskRequest) (p
 		return param.UpdateTaskResponse{}, err
 	}
 
+	oldState := existing
+
 	if req.Title != nil {
 		existing.Title = *req.Title
 	}
@@ -215,12 +230,31 @@ func (s Service) UpdateTask(ctx context.Context, req param.UpdateTaskRequest) (p
 	}
 	existing.Version++
 
-	if err := s.repo.UpdateTask(ctx, existing); err != nil {
+	auditLog := entity.TaskAuditLog{
+		Action: entity.ActionUpdate,
+		PreviousState: map[string]any{
+			"title":       oldState.Title,
+			"description": oldState.Description,
+			"status":      oldState.Status,
+			"assignee":    oldState.Assignee,
+			"version":     oldState.Version,
+		},
+		NewState: map[string]any{
+			"title":       existing.Title,
+			"description": existing.Description,
+			"status":      existing.Status,
+			"assignee":    existing.Assignee,
+			"version":     existing.Version,
+		},
+	}
+
+	if err := s.repo.UpdateTaskWithAuditLog(ctx, existing, auditLog); err != nil {
 		s.mtr.IncTaskUpdated(ctx, "fail", "db_error")
 		trace.RecordError(span, err)
-		reqLogger.ErrorContext(ctx, "failed to update task", slog.Any("error", err))
+		reqLogger.ErrorContext(ctx, "failed to update task and audit log", slog.Any("error", err))
 		return param.UpdateTaskResponse{}, richerror.New(op).WithErr(err)
 	}
+
 	if cErr := s.cache.DeleteByPrefix(ctx, "tasks:list:"); cErr != nil {
 		trace.RecordError(span, cErr)
 		reqLogger.WarnContext(ctx, "failed to invalidate tasks list cache", slog.Any("error", cErr))
@@ -231,7 +265,7 @@ func (s Service) UpdateTask(ctx context.Context, req param.UpdateTaskRequest) (p
 	}
 
 	s.mtr.IncTaskUpdated(ctx, "success", "none")
-	reqLogger.InfoContext(ctx, "task updated", slog.Int64("task_id", int64(existing.ID)))
+	reqLogger.InfoContext(ctx, "task updated with audit log", slog.Int64("task_id", int64(existing.ID)))
 
 	return param.UpdateTaskResponse{
 		Task: mapTaskEntityToTaskResponse(existing),
@@ -254,74 +288,115 @@ func (s Service) GetTask(ctx context.Context, req param.GetTaskByIDRequest) (par
 		slog.Int64("task_id", int64(req.ID)),
 	)
 
-	cacheKey := fmt.Sprintf("task:%d", req.ID)
-	var t entity.Task
-
-	err := s.cache.Get(ctx, cacheKey, &t)
-
-	if err == nil {
-		// Cache Penetration
-		if t.ID == 0 {
-			s.mtr.IncTaskFetched(ctx, "fail", "cache_hit_not_found")
-			span.SetAttributes(attribute.Bool("cache.hit", true))
-			reqLogger.DebugContext(ctx, "task marked as not found in cache")
-
-			return param.GetTaskByIDResponse{}, richerror.New(op).
-				WithKind(richerror.KindNotFound).
-				WithMessage("task not found")
-		}
-
-		s.mtr.IncTaskFetched(ctx, "success", "cache")
-		span.SetAttributes(attribute.Bool("cache.hit", true))
-		reqLogger.DebugContext(ctx, "task fetched from cache")
-
-		return param.GetTaskByIDResponse{Task: mapTaskEntityToTaskResponse(t)}, nil
+	auditPage := req.AuditPage
+	if auditPage <= 0 {
+		auditPage = 1
+	}
+	auditPageSize := req.AuditPageSize
+	if auditPageSize <= 0 {
+		auditPageSize = 10
 	}
 
-	span.SetAttributes(attribute.Bool("cache.hit", false))
+	var (
+		task       entity.Task
+		auditLogs  []entity.TaskAuditLog
+		auditTotal int64
+		auditErr   error
+	)
 
-	// Singleflight: only one goroutine hits DB for the same key
-	result, err, _ := s.sf.Do(cacheKey, func() (any, error) {
-		// Re-check cache inside singleflight (another goroutine may have populated it)
-		var cachedTask entity.Task
-		if cacheErr := s.cache.Get(ctx, cacheKey, &cachedTask); cacheErr == nil {
-			if cachedTask.ID == 0 {
-				return nil, richerror.New(op).WithKind(richerror.KindNotFound).WithMessage("task not found")
+	eg, egCtx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
+		cacheKey := fmt.Sprintf("task:%d", req.ID)
+
+		if err := s.cache.Get(egCtx, cacheKey, &task); err == nil {
+			if task.ID == 0 {
+				return richerror.New(op).WithKind(richerror.KindNotFound).WithMessage("task not found")
 			}
-			return cachedTask, nil
+			s.mtr.IncTaskFetched(egCtx, "success", "cache")
+			span.SetAttributes(attribute.Bool("cache.hit", true))
+			reqLogger.DebugContext(egCtx, "task fetched from cache")
+			return nil
 		}
 
-		// Fetch from DB
-		task, dbErr := s.repo.GetTask(ctx, req.ID)
-		if dbErr != nil {
-			if richerror.IsKind(dbErr, richerror.KindNotFound) {
-				_ = s.cache.Set(ctx, cacheKey, entity.Task{ID: 0}, time.Minute*1)
+		span.SetAttributes(attribute.Bool("cache.hit", false))
+
+		result, sfErr, _ := s.sf.Do(cacheKey, func() (any, error) {
+			var cachedTask entity.Task
+			if cacheErr := s.cache.Get(egCtx, cacheKey, &cachedTask); cacheErr == nil {
+				if cachedTask.ID == 0 {
+					return nil, richerror.New(op).WithKind(richerror.KindNotFound).WithMessage("task not found")
+				}
+				return cachedTask, nil
 			}
-			return nil, dbErr
+
+			t, dbErr := s.repo.GetTask(egCtx, req.ID)
+			if dbErr != nil {
+				if richerror.IsKind(dbErr, richerror.KindNotFound) {
+					_ = s.cache.Set(egCtx, cacheKey, entity.Task{ID: 0}, time.Minute*1)
+				}
+				return nil, dbErr
+			}
+
+			if cacheErr := s.cache.Set(egCtx, cacheKey, t, time.Minute*5); cacheErr != nil {
+				trace.RecordError(span, cacheErr)
+				reqLogger.WarnContext(egCtx, "failed to populate cache", slog.Any("error", cacheErr))
+			}
+			return t, nil
+		})
+
+		if sfErr != nil {
+			return sfErr
 		}
 
-		// Populate cache
-		if cacheErr := s.cache.Set(ctx, cacheKey, task, time.Minute*5); cacheErr != nil {
-			trace.RecordError(span, cacheErr)
-			reqLogger.WarnContext(ctx, "failed to populate cache", slog.Any("error", cacheErr))
-		}
-
-		return task, nil
+		task = result.(entity.Task)
+		s.mtr.IncTaskFetched(egCtx, "success", "db")
+		reqLogger.InfoContext(egCtx, "task fetched from db")
+		return nil
 	})
 
-	if err != nil {
-		s.mtr.IncTaskFetched(ctx, "fail", "db")
+	eg.Go(func() error {
+		var logsErr error
+		auditLogs, auditTotal, logsErr = s.repo.GetAuditLogsByTaskID(egCtx, req.ID, auditPage, auditPageSize)
+		if logsErr != nil {
+			auditErr = logsErr
+		}
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
 		trace.RecordError(span, err)
 		reqLogger.ErrorContext(ctx, "failed to get task", slog.Any("error", err))
-		return param.GetTaskByIDResponse{}, richerror.New(op).WithErr(err)
+		return param.GetTaskByIDResponse{}, err
 	}
 
-	t = result.(entity.Task)
-	s.mtr.IncTaskFetched(ctx, "success", "db")
-	reqLogger.InfoContext(ctx, "task fetched from db")
+	taskResp := mapTaskEntityToTaskResponse(task)
+
+	if auditErr != nil {
+		trace.RecordError(span, auditErr)
+		reqLogger.WarnContext(ctx, "failed to fetch audit logs", slog.Any("error", auditErr))
+	} else {
+		auditResponses := make([]param.AuditLogResponse, 0, len(auditLogs))
+		for _, l := range auditLogs {
+			auditResponses = append(auditResponses, param.AuditLogResponse{
+				ID:            l.ID,
+				TaskID:        l.TaskID,
+				Action:        l.Action,
+				PreviousState: l.PreviousState,
+				NewState:      l.NewState,
+				CreatedAt:     l.CreatedAt,
+			})
+		}
+		taskResp.AuditLogs = auditResponses
+	}
 
 	return param.GetTaskByIDResponse{
-		Task: mapTaskEntityToTaskResponse(t),
+		Task: taskResp,
+		AuditPagination: &param.PaginationResponse{
+			PageSize:   auditPageSize,
+			PageNumber: auditPage,
+			Total:      auditTotal,
+		},
 	}, nil
 }
 

@@ -40,7 +40,7 @@ func TestService_CreateTask(t *testing.T) {
 			Version: 1,
 		}
 
-		mockRepo.On("CreateTask", mock.Anything, mock.AnythingOfType("entity.Task")).
+		mockRepo.On("CreateTaskWithAuditLog", mock.Anything, mock.AnythingOfType("entity.Task"), mock.AnythingOfType("entity.TaskAuditLog")).
 			Return(createdTask, nil).Once()
 
 		mockCache.On("DeleteByPrefix", mock.Anything, "tasks:list:").Return(nil).Once()
@@ -75,7 +75,7 @@ func TestService_CreateTask(t *testing.T) {
 		req := param.CreateTaskRequest{Title: "Design API", Status: entity.StatusTodo}
 		createdTask := entity.Task{ID: 2, Title: "Design API", Status: entity.StatusTodo}
 
-		mockRepo.On("CreateTask", mock.Anything, mock.AnythingOfType("entity.Task")).
+		mockRepo.On("CreateTaskWithAuditLog", mock.Anything, mock.AnythingOfType("entity.Task"), mock.AnythingOfType("entity.TaskAuditLog")).
 			Return(createdTask, nil).Once()
 
 		mockCache.On("DeleteByPrefix", mock.Anything, "tasks:list:").Return(nil).Once()
@@ -103,7 +103,7 @@ func TestService_CreateTask(t *testing.T) {
 
 		req := param.CreateTaskRequest{Title: "DB Test", Status: entity.StatusTodo}
 
-		mockRepo.On("CreateTask", mock.Anything, mock.AnythingOfType("entity.Task")).
+		mockRepo.On("CreateTaskWithAuditLog", mock.Anything, mock.AnythingOfType("entity.Task"), mock.AnythingOfType("entity.TaskAuditLog")).
 			Return(entity.Task{}, errors.New("db connection failed")).Once()
 
 		mockMetrics.On("RecordTaskCreatedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
@@ -138,7 +138,7 @@ func TestService_CreateTask(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Empty(t, resp)
-		mockRepo.AssertNotCalled(t, "CreateTask")
+		mockRepo.AssertNotCalled(t, "CreateTaskWithAuditLog")
 		mockCache.AssertNotCalled(t, "Set")
 		mockCache.AssertNotCalled(t, "DeleteByPrefix")
 	})
@@ -159,7 +159,7 @@ func TestService_CreateTask(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Empty(t, resp)
-		mockRepo.AssertNotCalled(t, "CreateTask")
+		mockRepo.AssertNotCalled(t, "CreateTaskWithAuditLog")
 		mockCache.AssertNotCalled(t, "Set")
 		mockCache.AssertNotCalled(t, "DeleteByPrefix")
 	})
@@ -191,9 +191,9 @@ func TestService_UpdateTask(t *testing.T) {
 		mockRepo.On("GetTask", mock.Anything, entity.ID(1)).
 			Return(existingTask, nil).Once()
 
-		mockRepo.On("UpdateTask", mock.Anything, mock.MatchedBy(func(t entity.Task) bool {
+		mockRepo.On("UpdateTaskWithAuditLog", mock.Anything, mock.MatchedBy(func(t entity.Task) bool {
 			return t.Title == "Updated Title" && t.Version == 2
-		})).Return(nil).Once()
+		}), mock.AnythingOfType("entity.TaskAuditLog")).Return(nil).Once()
 
 		mockCache.On("DeleteByPrefix", mock.Anything, "tasks:list:").Return(nil).Once()
 		mockCache.On("Delete", mock.Anything, "task:1").Return(nil).Once()
@@ -236,9 +236,9 @@ func TestService_UpdateTask(t *testing.T) {
 		mockRepo.On("GetTask", mock.Anything, entity.ID(1)).
 			Return(existingTask, nil).Once()
 
-		mockRepo.On("UpdateTask", mock.Anything, mock.MatchedBy(func(t entity.Task) bool {
+		mockRepo.On("UpdateTaskWithAuditLog", mock.Anything, mock.MatchedBy(func(t entity.Task) bool {
 			return t.Status == entity.StatusInProgress && t.Version == 2
-		})).Return(nil).Once()
+		}), mock.AnythingOfType("entity.TaskAuditLog")).Return(nil).Once()
 
 		mockCache.On("DeleteByPrefix", mock.Anything, "tasks:list:").Return(nil).Once()
 		mockCache.On("Delete", mock.Anything, "task:1").Return(nil).Once()
@@ -289,7 +289,7 @@ func TestService_UpdateTask(t *testing.T) {
 		assert.Error(t, err)
 		assert.Empty(t, resp)
 		assert.True(t, richerror.IsKind(err, richerror.KindConflict))
-		mockRepo.AssertNotCalled(t, "UpdateTask")
+		mockRepo.AssertNotCalled(t, "UpdateTaskWithAuditLog")
 		mockCache.AssertNotCalled(t, "Delete")
 		mockCache.AssertNotCalled(t, "DeleteByPrefix")
 	})
@@ -323,7 +323,7 @@ func TestService_UpdateTask(t *testing.T) {
 		assert.Error(t, err)
 		assert.Empty(t, resp)
 		assert.True(t, richerror.IsKind(err, richerror.KindNotFound))
-		mockRepo.AssertNotCalled(t, "UpdateTask")
+		mockRepo.AssertNotCalled(t, "UpdateTaskWithAuditLog")
 		mockCache.AssertNotCalled(t, "Delete")
 		mockCache.AssertNotCalled(t, "DeleteByPrefix")
 	})
@@ -353,7 +353,7 @@ func TestService_UpdateTask(t *testing.T) {
 		assert.Error(t, err)
 		assert.Empty(t, resp)
 		assert.False(t, richerror.IsKind(err, richerror.KindNotFound))
-		mockRepo.AssertNotCalled(t, "UpdateTask")
+		mockRepo.AssertNotCalled(t, "UpdateTaskWithAuditLog")
 		mockCache.AssertNotCalled(t, "Delete")
 		mockCache.AssertNotCalled(t, "DeleteByPrefix")
 	})
@@ -448,7 +448,7 @@ func TestService_UpdateTask(t *testing.T) {
 		mockRepo.On("GetTask", mock.Anything, entity.ID(1)).
 			Return(existingTask, nil).Once()
 
-		mockRepo.On("UpdateTask", mock.Anything, mock.AnythingOfType("entity.Task")).
+		mockRepo.On("UpdateTaskWithAuditLog", mock.Anything, mock.AnythingOfType("entity.Task"), mock.AnythingOfType("entity.TaskAuditLog")).
 			Return(errors.New("db error")).Once()
 
 		mockMetrics.On("RecordTaskUpdatedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
@@ -487,6 +487,8 @@ func TestService_GetTask(t *testing.T) {
 				*dest = cachedTask
 			}).Return(nil).Once()
 
+		mockRepo.On("GetAuditLogsByTaskID", mock.Anything, entity.ID(1), 1, 10).Return([]entity.TaskAuditLog{}, int64(0), nil).Once()
+
 		mockMetrics.On("RecordTaskFetchedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
 		mockMetrics.On("IncTaskFetched", mock.Anything, "success", "cache").Return().Once()
 
@@ -513,6 +515,8 @@ func TestService_GetTask(t *testing.T) {
 				dest := args.Get(2).(*entity.Task)
 				*dest = entity.Task{ID: 0}
 			}).Return(nil).Once()
+
+		mockRepo.On("GetAuditLogsByTaskID", mock.Anything, entity.ID(999), 1, 10).Return([]entity.TaskAuditLog{}, int64(0), nil).Once()
 
 		mockMetrics.On("RecordTaskFetchedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
 		mockMetrics.On("IncTaskFetched", mock.Anything, "fail", "cache_hit_not_found").Return().Once()
@@ -547,6 +551,8 @@ func TestService_GetTask(t *testing.T) {
 
 		mockRepo.On("GetTask", mock.Anything, entity.ID(1)).
 			Return(dbTask, nil).Once()
+
+		mockRepo.On("GetAuditLogsByTaskID", mock.Anything, entity.ID(1), 1, 10).Return([]entity.TaskAuditLog{}, int64(0), nil).Once()
 
 		mockCache.On("Set", mock.Anything, "task:1", dbTask, 5*time.Minute).
 			Return(nil).Once()
@@ -584,6 +590,8 @@ func TestService_GetTask(t *testing.T) {
 		mockRepo.On("GetTask", mock.Anything, entity.ID(999)).
 			Return(entity.Task{}, notFoundErr).Once()
 
+		mockRepo.On("GetAuditLogsByTaskID", mock.Anything, entity.ID(999), 1, 10).Return([]entity.TaskAuditLog{}, int64(0), nil).Once()
+
 		mockCache.On("Set", mock.Anything, "task:999", entity.Task{ID: 0}, 1*time.Minute).
 			Return(nil).Once()
 
@@ -613,6 +621,8 @@ func TestService_GetTask(t *testing.T) {
 
 		mockRepo.On("GetTask", mock.Anything, entity.ID(1)).
 			Return(entity.Task{}, errors.New("connection refused")).Once()
+
+		mockRepo.On("GetAuditLogsByTaskID", mock.Anything, entity.ID(1), 1, 10).Return([]entity.TaskAuditLog{}, int64(0), nil).Once()
 
 		mockMetrics.On("RecordTaskFetchedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
 		mockMetrics.On("IncTaskFetched", mock.Anything, "fail", "db").Return().Once()
@@ -646,6 +656,8 @@ func TestService_GetTask(t *testing.T) {
 
 		mockRepo.On("GetTask", mock.Anything, entity.ID(1)).
 			Return(dbTask, nil).Once()
+
+		mockRepo.On("GetAuditLogsByTaskID", mock.Anything, entity.ID(1), 1, 10).Return([]entity.TaskAuditLog{}, int64(0), nil).Once()
 
 		mockCache.On("Set", mock.Anything, "task:1", dbTask, 5*time.Minute).
 			Return(errors.New("redis down")).Once()

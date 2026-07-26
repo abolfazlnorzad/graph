@@ -1,18 +1,18 @@
 {
-  "timestamp": "2026-07-25T15:10:57.565Z",
+  "timestamp": "2026-07-26T07:56:43.584Z",
   "test_type": "stress",
-  "total_duration": "1.6s",
-  "total_requests": 81952,
-  "req_per_sec": "407.47",
+  "total_duration": "2.9s",
+  "total_requests": 75236,
+  "req_per_sec": "375.01",
   "error_rate": "0.00%",
   "max_vus": 500,
   "latency": {
-    "avg": "13.4ms",
+    "avg": "39.1ms",
     "p50": "0.0ms",
-    "p90": "40.0ms",
-    "p95": "57.4ms",
+    "p90": "114.4ms",
+    "p95": "226.3ms",
     "p99": "0.0ms",
-    "max": "207.2ms"
+    "max": "926.5ms"
   },
   "failed_thresholds": [],
   "verdict": "PASS"

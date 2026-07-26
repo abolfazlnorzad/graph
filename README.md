@@ -1,9 +1,8 @@
-> ## 📘 **For deep technical details, data flow, and trade-offs, please read the [Architecture Documentation](./ARCHITECTURE.md).**
-
+> **For deep technical details, data flow, and trade-offs, see the [Architecture Documentation](./ARCHITECTURE.md).**
 
 # Graph Task Management API
 
-REST API for managing tasks (to-do). Built with **Go**, **Gin**, **PostgreSQL**, and **Redis**.
+A REST API for managing tasks (to-do). Built with **Go**, **Gin**, **PostgreSQL**, **Redis**, and **OpenTelemetry**.
 
 ---
 
@@ -11,10 +10,6 @@ REST API for managing tasks (to-do). Built with **Go**, **Gin**, **PostgreSQL**,
 
 ![Architecture Diagram](docs/architecture.png)
 
-> For interactive version, open `docs/architecture.html` in a browser. To regenerate from source, install [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) and run:
-> ```bash
-> npx @mermaid-js/mermaid-cli -i docs/architecture.mmd -o docs/architecture.png -b white -w 1200
-> ```
 
 ---
 
@@ -50,9 +45,9 @@ make docker-down
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/tasks` | Create a task |
-| `GET` | `/tasks/:id` | Get task by ID |
-| `PATCH` | `/tasks/:id` | Update task |
-| `DELETE` | `/tasks/:id` | Delete task |
+| `GET` | `/tasks/:id` | Get task by ID (with audit logs) |
+| `PATCH` | `/tasks/:id` | Update task (optimistic locking) |
+| `DELETE` | `/tasks/:id` | Delete task (soft delete) |
 | `GET` | `/tasks` | List tasks (pagination + filters) |
 
 ---
@@ -84,6 +79,40 @@ curl -X POST http://localhost:8080/tasks \
       "version": 1,
       "created_at": "2024-01-01T00:00:00Z",
       "updated_at": "2024-01-01T00:00:00Z"
+    }
+  }
+}
+```
+
+### Get Task with Audit Logs
+```bash
+curl "http://localhost:8080/tasks/1?audit_page=1&audit_page_size=10"
+```
+
+**Response (200):**
+```json
+{
+  "status": "success",
+  "data": {
+    "result": {
+      "id": 1,
+      "title": "Setup CI/CD Pipeline",
+      "status": "TODO",
+      "audit_logs": [
+        {
+          "id": 1,
+          "task_id": 1,
+          "action": "CREATE",
+          "previous_state": null,
+          "new_state": {"title": "Setup CI/CD Pipeline", "status": "TODO"},
+          "created_at": "2024-01-01T00:00:00Z"
+        }
+      ],
+      "audit_pagination": {
+        "page_size": 10,
+        "page_number": 1,
+        "total": 1
+      }
     }
   }
 }
@@ -135,7 +164,6 @@ curl -X PATCH http://localhost:8080/tasks/1 \
 
 ### Version Conflict (409)
 ```bash
-# If version is outdated:
 curl -X PATCH http://localhost:8080/tasks/1 \
   -H "Content-Type: application/json" \
   -d '{"title": "Fail", "version": 1}'
@@ -168,25 +196,41 @@ make test-coverage     # Coverage report (HTML)
 make test-race         # Race detector
 ```
 
-Coverage: **~92%** (service: 92.6%, postgres: 81.4%, redis: 77.3%, pkg: 87-94%)
+**Coverage:** ~85% (service: 91.6%, postgres: 77.5%, redis: 77.3%, pkg: 87-94%)
 
 ---
 
 ## API Documentation
 
-Swagger UI: `http://localhost:8080/swagger/index.html`
-
-Raw specs: `docs/swagger.json`, `docs/swagger.yaml`
+- Swagger UI: `http://localhost:8080/swagger/index.html`
+- Raw specs: `docs/swagger.json`, `docs/swagger.yaml`
 
 ---
 
 ## Observability
 
-- **Metrics:** `http://localhost:8080/metrics` (Prometheus format)
-- **Prometheus:** `http://localhost:9090` (via Docker)
-- **Tracing:** OpenTelemetry spans in logs (trace_id, span_id)
+### Metrics (OTLP via OTel Collector)
+- **Prometheus:** `http://localhost:9090`
+- **Metrics endpoint:** `http://localhost:8080/metrics`
 
-Key metrics: `tasks_count`, `request_latency_histogram`, `requests_total`
+Key metrics: `requests_total`, `request_latency_histogram`, `tasks_count`, `task_created_total`, `task_fetched_total`
+
+### Tracing (OpenTelemetry → Tempo)
+- **Tempo:** `http://localhost:3200`
+- All HTTP requests and DB operations are traced
+- Click `trace_id` in logs → navigate to Tempo
+
+### Logging (Loki + Promtail)
+- **Loki:** `http://localhost:3100`
+- Structured JSON logs with `trace_id`, `span_id`, `op`, `level`
+- Grafana Logs dashboard for log exploration
+
+### Grafana Dashboards
+- **Graph - Application:** Request rate, latency (p50/p95/p99), business metrics, traces
+- **Graph - Infrastructure:** Go runtime, PostgreSQL, Redis, Service Map
+- **Graph - Logs:** Log volume, error logs, live stream, trace correlation
+
+Access at `http://localhost:3000` (admin/admin)
 
 ---
 
@@ -204,7 +248,6 @@ make clean            # Clean build artifacts
 make k6-load          # Run k6 load test
 make k6-stress        # Run k6 stress test
 make k6-spike         # Run k6 spike test
-make k6-soak          # Run k6 soak test (10min)
 make k6-all           # Run all k6 tests
 ```
 
@@ -212,118 +255,57 @@ make k6-all           # Run all k6 tests
 
 ## k6 Performance Tests
 
-Full performance test suite using [k6](https://k6.io/). Install with `brew install k6`.
+Full performance test suite using [k6](https://k6.io/)
 
 | Test | VUs | Duration | Goal |
 |------|-----|----------|------|
 | **Load** | 0→50→0 | ~130s | Normal production traffic within SLA |
 | **Stress** | 0→5→20→50→100→200→500→0 | ~4min | Find breaking point |
 | **Spike** | 5→1000→5→0 | ~2min | Flash sale / viral burst recovery |
-| **Soak** | 0→20 (10min sustained) | ~11min | Memory leaks, connection pool exhaustion |
-
-### Run
-
-```bash
-make k6-load
-make k6-stress
-make k6-spike
-make k6-soak
-make k6-all
-```
 
 ### Results
 
-| Test | Total Requests | Throughput | Avg | p50 | p95 | p99 | Max | Error Rate | Verdict |
-|------|---------------|-----------|-----|-----|-----|-----|-----|-----------|---------|
-| **Load** (50 VUs) | 15,925 | 120.44 req/s | 4.7ms | <1ms | 12.6ms | — | 43.9ms | 0.00% | PASS |
-| **Stress** (500 VUs) | 81,952 | 407.47 req/s | 13.4ms | <1ms | 57.4ms | — | 207.2ms | 0.00% | PASS |
-| **Spike** (1000 VUs) | 54,305 | 540.16 req/s | 358.4ms | <1ms | 1458.4ms | — | 1886.3ms | 0.00% | PASS |
+| Test | Requests | Throughput | p95 | Error Rate |
+|------|----------|------------|-----|------------|
+| **Load** (50 VUs) | 15,988 | 121.19 req/s | 10.2ms | 0.00% |
+| **Stress** (500 VUs) | — | 375.01 req/s | 226.3ms | 0.00% |
+| **Spike** (1000 VUs) | — | 395.63 req/s | 2138.0ms | 0.00% |
 
 ### Metric Glossary
 
-| Metric | What It Means |
-|--------|--------------|
-| **VUs (Virtual Users)** | تعداد کاربران همزمان مجازی که درخواست ارسال می‌کنند. هر VU یک loop متوالی از درخواست‌ها اجرا می‌کند |
-| **Throughput (req/s)** | تعداد درخواست‌های موفق در ثانیه. نشان‌دهنده ظرفیت واقعی سرویس است |
-| **Avg Latency** | میانگین زمان پاسخ‌دهی. شامل سریع‌ترین و کندترین درخواست‌ها |
-| **p50 (Median)** | ۵۰٪ درخواست‌ها زیر این مقدار پاسخ می‌دهند. نشان‌دهنده رفتار «عادی» سرویس |
-| **p90** | ۹۰٪ درخواست‌ها زیر این مقدار پاسخ می‌دهند |
-| **p95** | ۹۵٪ درخواست‌ها زیر این مقدار پاسخ می‌دهند. مهم‌ترین معیار SLA |
-| **p99** | ۹۹٪ درخواست‌ها زیر این مقدار پاسخ می‌دهند. نشان‌دهنده «بدترین حالت معقول» |
-| **Max** | کندترین درخواست در کل تست. ممکن است outlier باشد (مثلاً cold start) |
-| **Error Rate** | درصد درخواست‌های ناموفق (غیر 2xx). در این پروژه، 409 Conflict از optimistic locking خطا نیست |
+| Metric | Description |
+|--------|-------------|
+| **VUs** | Virtual Users — concurrent users sending requests |
+| **Throughput** | Successful requests per second |
+| **p95** | 95th percentile latency — the most important SLA metric |
+| **Error Rate** | Percentage of failed requests (409 Conflict is not an error) |
 
-### Detailed Analysis
+### Understanding VUs and Ramp Phases
 
-#### Load Test — 50 VUs (ترافیک نرمال)
+**VUs (Virtual Users)** simulate concurrent users. Each VU runs a loop of requests independently.
 
+**Ramp-up** gradually increases VUs to avoid shocking the system:
 ```
-Phase:    Ramp-up (30s)  →  Sustain (90s)  →  Ramp-down (10s)
-VUs:      0 → 50          →  50 constant     →  50 → 0
+0 → 50 VUs over 30s = ~1.7 VUs added per second
 ```
 
-**نتیجه:** با ۵۰ کاربر همزمان، سرویس **۱۲۰ درخواست در ثانیه** با **p95 زیر ۱۳ میلی‌ثانیه** پاسخ می‌دهد.
-
-- **p50 < 1ms:** نیمی از درخواست‌ها تقریباً آنی هستند — این نشان‌دهنده کارایی Redis cache است
-- **p95 = 12.6ms:** ۹۵٪ درخواست‌ها زیر ۱۳ms پاسخ می‌دهند — بسیار بهتر از SLA معمول (<200ms)
-- **Max = 43.9ms:** کندترین درخواست — احتمالاً cold cache یا اولین درخواست بعد از ramp-up
-- **Error Rate = 0%:** تمام درخواست‌ها موفق بوده‌اند
-
-#### Stress Test — 500 VUs (فشار حداکثری)
-
+**Sustain** holds steady VUs to measure stable performance:
 ```
-Phase:    Warm → Normal → Heavy → Stress → Extreme → Recovery → Down
-VUs:      5  →  20    →  50   →  100  →  200    →  500     →  5  →  0
+50 VUs for 90s = sustained load
 ```
 
-**نتیجه:** با **۵۰۰ کاربر همزمان**، سرویس **۴۰۷ درخواست در ثانیه** با **p95 زیر ۵۸ms** پاسخ می‌دهد و **صفر خطا** دارد.
-
-- **p50 < 1ms:** حتی با ۵۰۰ VU، نیمی از درخواست‌ها همچنان زیر ۱ms هستند — cache hit rate بالا
-- **p90 = 40ms:** ۹۰٪ درخواست‌ها زیر ۴۰ms — قابل قبول برای ۵۰۰ کاربر
-- **p95 = 57.4ms:** با ۱۰ برابر load نسبت به تست قبل، p95 حدود ۴.۵ برابر شده (۱۲.۶ms → ۵۷.۴ms) — خطی و قابل پیش‌بینی
-- **Max = 207.2ms:** کندترین درخواست در اوج فشار — احتمالاً مربوط به connection pool waiting
-- **Error Rate = 0%:** صفر خطا حتی در ۵۰۰ VU — connection pool (25 conns) کافی بوده
-
-#### مقایسه Load vs Stress vs Spike
-
+**Ramp-down** gradually decreases VUs:
 ```
-VUs:        50        500        1000       (۲۰ برابر)
-Throughput: 120       407        540        (۴.۵ برابر)
-p95:        12.6ms    57.4ms     1458ms     (۱۱۵ برابر)
-Error:      0%        0%         0%         (بدون تغییر)
+50 → 0 VUs over 10s = ~5 VUs removed per second
 ```
 
-**تحلیل:** وقتی load ۱۰ برابر می‌شود، throughput فقط ۳.۴ برابر شده — این نشان‌دهنده bottleneck در connection pool PostgreSQL (25 connection) است. اگر pool را به ۵۰-۱۰۰ افزایش دهیم، throughput تقریباً خطی رشد می‌کند. اما p95 همچنان زیر SLA هست و error rate صفر است.
-
-#### Spike Test — 1000 VUs (ضربه ناگهانی)
-
-```
-Phase:    Baseline → Spike → Sustain → Recovery → Post-spike → Cooldown
-VUs:      5       → 1000  → 1000    → 5        → 5         → 0
-```
-
-**نتیجه:** با **۱۰۰۰ کاربر همزمان**، سرویس **۵۴۰ درخواست در ثانیه** با **error rate صفر** پاسخ می‌دهد.
-
-- **Throughput = 540 req/s:** بالاترین throughput در بین تمام تست‌ها — سرویس زیر فشار شدید هم پاسخ می‌دهد
-- **p95 = 1458ms:** تحت ۱۰۰۰ VU، ۹۵٪ درخواست‌ها زیر ۱.۵ ثانیه پاسخ می‌دهند — قابل قبول برای spike
-- **Max = 1886ms:** کندترین درخواست زیر ۲ ثانیه — سرویس حتی در بدترین حالت timeout نمی‌شود
-- **Error Rate = 0%:** صفر خطا حتی با ۱۰۰۰ کاربر — نشان‌دهنده پایداری بالای سرویس
-- **Recovery:** سرویس بعد از spike به سرعت به حالت عادی برمی‌گردد
-
-#### پیش‌بینی ظرفیت
-
-بر اساس نتایج:
-- **نرمال:** تا ۱۰۰ VU / ۲۰۰ req/s — بدون هیچ مشکلی
-- **Heavy:** تا ۳۰۰ VU / ۳۵۰ req/s — p95 زیر ۴۰ms
-- **Extreme:** ۵۰۰ VU / ۴۰۷ req/s — p95 زیر ۵۷ms
-- **Spike:** ۱۰۰۰ VU / ۵۴۰ req/s — p95 زیر ۱.۵s, error rate صفر
-- **Breaking Point:** پیدا نشد — سرویس حتی با ۱۰۰۰ VU پایدار است
+**Why ramp?** Sudden spikes can cause connection pool exhaustion, cache stampedes, and cascading failures. Ramp-up mimics real-world traffic patterns.
 
 ---
 
 ## Benchmark & pprof
 
-Benchmark ها عملکرد service layer را با mock dependencies اندازه‌گیری می‌کنند — بدون سربار شبکه یا دیتابیس واقعی.
+Benchmarks measure service layer performance with mock dependencies — no network or DB overhead.
 
 ### Run Benchmarks
 
@@ -338,100 +320,90 @@ make test-bench
 ```
 Benchmark              Iterations    ns/op        B/op      allocs/op
 ──────────────────────────────────────────────────────────────────────
-BenchmarkGetTask         144,429     24,498      12,614       147
-BenchmarkDeleteTask       73,021     46,772      22,584       244
-BenchmarkUpdateTask       69,174     52,205      27,841       307
-BenchmarkCreateTask       65,623     54,579      28,834       309
-BenchmarkListTask         54,840     65,481      33,799       380
+BenchmarkGetTask         26,546     45,416      18,989       221
+BenchmarkCreateTask      20,664     57,185      29,327       328
+BenchmarkUpdateTask      21,500     64,051      29,668       341
+BenchmarkDeleteTask      23,926     46,487      22,436       244
+BenchmarkListTask        18,474     64,172      33,397       380
 ```
 
 ### Benchmark Glossary
 
-| Metric | What It Means |
-|--------|--------------|
-| **Iterations** | تعداد دفعاتی که test case تکرار شده. عدد بیشتر = نتیجه قابل اعتمادتر |
-| **ns/op** | نانوثانیه در هر operation. زمان اجرای یک فراخوانی کامل (بدون I/O شبکه) |
-| **B/op** | بایت تخصیص یافته در هر operation. حافظه‌ای که GC باید جمع‌آوری کند |
-| **allocs/op** | تعداد تخصیص حافظه در هر operation. عدد کمتر = فشار کمتر روی GC |
-
-### Detailed Analysis
-
-#### GetTask — سریع‌ترین operation (24μs)
-
-```
-ns/op: 24,498  |  B/op: 12.6KB  |  allocs: 147
-```
-
-- **24 میکروثانیه** — سریع‌ترین operation چون مسیر cache hit را دنبال می‌کند
-- **12.6KB حافظه** — کمترین مصرف چون فقط یک struct از cache برمی‌گرداند
-- **147 alloc** — اکثر از JSON unmarshal و string copy می‌آید
-- **دلیل سرعت:** Redis cache + singleflight باعث می‌شود بیشتر درخواست‌ها بدون touch کردن دیتابیس پاسخ بگیرند
-
-#### DeleteTask — سریع‌ترین write (47μs)
-
-```
-ns/op: 46,772  |  B/op: 22.6KB  |  allocs: 244
-```
-
-- **47 میکروثانیه** — کمی سریع‌تر از Create/Update چون نیاز به version check ندارد
-- **22.6KB حافظه** — کمتر از Create چون data کمتری serialize می‌شود
-- **244 alloc** — شامل soft delete DB query + cache invalidation (Delete + DeleteByPrefix)
-- **نکته:** DeleteByPrefix روی Redis با SCAN کار می‌کند که زیر ۱ms اجرا می‌شود
-
-#### UpdateTask — با version conflict check (52μs)
-
-```
-ns/op: 52,205  |  B/op: 27.8KB  |  allocs: 307
-```
-
-- **52 میکروثانیه** — شامل 3 مرحله: GetTask (version check) → UpdateTask → cache invalidation
-- **27.8KB حافظه** — بیشتر از Delete چون ابتدا task فعلی را از DB می‌خواند
-- **307 alloc** — بیشترین در بین write operations
-- **دلیل تأخیر:** Optimistic locking نیاز به یک SELECT قبل از UPDATE دارد (read-then-write)
-
-#### CreateTask — با cache set (55μs)
-
-```
-ns/op: 54,579  |  B/op: 28.8KB  |  allocs: 309
-```
-
-- **55 میکروثانیه** — شامل 2 مرحله: DB INSERT + cache SET
-- **28.8KB حافظه** — بیشترین مصرف چون هم entity جدید و هم response ساخته می‌شود
-- **309 alloc** — مشابه UpdateTask
-- **نکته:** بعد از INSERT، cache list هم invalidate می‌شود (DeleteByPrefix)
-
-#### ListTask — سنگین‌ترین operation (65μs)
-
-```
-ns/op: 65,481  |  B/op: 33.8KB  |  allocs: 380
-```
-
-- **65 میکروثانیه** — سنگین‌ترین چون هم COUNT query و هم SELECT query اجرا می‌شود
-- **33.8KB حافظه** — بیشترین چون slice از task ها + pagination metadata ساخته می‌شود
-- **380 alloc** — بیشترین allocation به خاطر iterate روی rows و scan هر task
-- **دلیل وزن:** ListTask دو query SQL اجرا می‌کند (شمارش کل + select صفحه)
+| Metric | Description |
+|--------|-------------|
+| **Iterations** | Number of times the test was executed |
+| **ns/op** | Nanoseconds per operation |
+| **B/op** | Bytes allocated per operation |
+| **allocs/op** | Memory allocations per operation |
 
 ### pprof Analysis
-
-pprof پروفایل‌های CPU و حافظه را تولید می‌کند تا bottleneck های واقعی را پیدا کنیم.
 
 ```bash
 # Generate profiles
 make test-bench
 
-# CPU profile — کجا CPU وقت صرف می‌کند
+# CPU profile
 go tool pprof cpu.prof
 
-# Memory profile — کجا حافظه تخصیص می‌یابد
+# Memory profile
 go tool pprof mem.prof
 
 # Top functions by CPU time
 go tool pprof -top cpu.prof
 
-# Top functions by memory allocation
-go tool pprof -top mem.prof
+# Visual web UI (requires graphviz)
+go tool pprof -http=:8081 cpu.prof
+```
 
-# Visual web UI (نیاز به graphviz)
+### Benchmark vs k6 Load Test
+
+| Metric | Benchmark (service layer) | k6 Load Test (Docker) |
+|--------|--------------------------|----------------------|
+| GetTask | 45μs | ~5ms (p50) |
+| CreateTask | 57μs | ~10ms |
+| ListTask | 64μs | ~15ms |
+| **Overhead** | — | **100-200x** |
+
+The overhead is expected: k6 tests the full stack including HTTP, Gin routing, JSON serialization, network latency, Redis, and PostgreSQL.
+
+### What Benchmarks Measure
+
+Benchmarks test the **service layer in isolation** with mock dependencies:
+- No network latency
+- No actual database queries
+- No JSON serialization/deserialization
+- No HTTP middleware
+
+This tells you the **theoretical minimum latency** of your business logic. The gap between benchmark and k6 shows the real-world overhead of the full stack.
+
+### What k6 Measures
+
+k6 tests the **entire system** under realistic conditions:
+- HTTP requests over the network
+- Gin routing and middleware
+- JSON serialization/deserialization
+- PostgreSQL queries with real data
+- Redis cache operations
+- Connection pool management
+- Concurrent access patterns
+
+This is what your users actually experience.
+
+### pprof Analysis
+
+pprof generates CPU and memory profiles to identify real bottlenecks.
+
+```bash
+# Generate profiles
+go test -bench=. -benchmem -cpuprofile=cpu.prof -memprofile=mem.prof ./service/
+
+# CPU profile — where CPU time is spent
+go tool pprof -top cpu.prof
+
+# Memory profile — where memory is allocated
+go tool pprof -top -alloc_space mem.prof
+
+# Visual web UI (requires graphviz)
 go tool pprof -http=:8081 cpu.prof
 ```
 
@@ -439,46 +411,45 @@ go tool pprof -http=:8081 cpu.prof
 
 ```
 flat%   cum%   function
-─────────────────────────────────────────────────────
-9.02%   9.02%  runtime.pcvalue           (stack scanning)
-8.66%  17.67%  runtime.madvise           (memory allocation from OS)
-6.79%  24.46%  runtime.scanobject        (GC object scanning)
-5.48%  29.94%  runtime.step              (stack unwinding)
-3.97%  33.92%  runtime.pthread_kill      (goroutine management)
-3.81%  37.73%  IndexByteString           (string search in mock)
+────────────────────────────────────────────────────
+11.76%  11.76%  runtime.pthread_cond_signal    (goroutine scheduling)
+ 9.90%  21.66%  runtime.madvise                (memory allocation from OS)
+ 8.21%  29.86%  runtime.pthread_cond_wait      (goroutine waiting)
+ 6.94%  36.80%  runtime.pcvalue                (stack scanning)
+ 5.75%  42.55%  runtime.pthread_kill           (goroutine management)
+ 4.31%  46.87%  runtime.scanobject             (GC object scanning)
+ 3.89%  54.91%  runtime.step                   (stack unwinding)
+ 2.45%  57.36%  internal/bytealg.IndexByteString (string search in mock)
 ```
 
-**تحلیل:**
-- **top 5 تابع همه از runtime Go هستند** — نه از کد application. یعنی business logic بهینه است
-- **runtime.madvise (8.66%)** — حافظه‌ای که از OS درخواست می‌شود. نرمال برای benchmark با mock ها
-- **runtime.scanobject (6.79%)** — GC در حال اسکن object ها. نشان‌دهنده فشار allocation بالا
-- **IndexByteString (3.81%)** — مربوط به mock reflection. در production با دیتابیس واقعی وجود ندارد
+**Analysis:**
+- **Top 8 functions are all Go runtime** — not application code. Business logic is optimized.
+- **pthread_cond_signal/wait (20%)** — goroutine scheduling overhead from testify mock calls
+- **runtime.madvise (9.9%)** — memory from OS. Normal for benchmarks with mocks
+- **runtime.scanobject (4.3%)** — GC scanning objects. Indicates allocation pressure
+- **IndexByteString (2.5%)** — mock reflection. Not present in production
 
 #### Memory Profile — Top Allocators
 
 ```
 flat      flat%    function
-──────────────────────────────────────────────────────
-2198MB    22.35%   strings.genSplit
-2075MB    21.10%   stretchr/testify/mock.(*Mock).MethodCalled
-2032MB    20.66%   fmt.Sprintf
-1233MB    12.54%   stretchr/testify/assert.CallerInfo
- 532MB     5.41%   stretchr/testify/mock.(*Mock).Called
+─────────────────────────────────────────────────────
+901MB    22.46%   strings.genSplit
+852MB    21.24%   fmt.Sprintf
+770MB    19.18%   stretchr/testify/mock.(*Mock).MethodCalled
+503MB    12.54%   stretchr/testify/assert.CallerInfo
+206MB     5.14%   stretchr/testify/mock.(*Mock).Called
+104MB     2.58%   github.com/go-ozzo/ozzo-validation/v4.findStructField
+ 83MB     2.07%   stretchr/testify/mock.Arguments.Diff
+ 71MB     1.77%   context.(*valueCtx).String
 ```
 
-**تحلیل:**
-- **88% حافظه توسط test framework مصرف می‌شود** — نه کد واقعی
-- **strings.genSplit (22%)** — تبدیل string به map در mock assertions
-- **fmt.Sprintf (20%)** — format کردن error messages در mock ها
-- **نتیجه:** در production بدون mock، مصرف حافظه ۱۰-۲۰ برابر کمتر خواهد بود
+**Analysis:**
+- **88% of memory is consumed by test framework** — not production code
+- **strings.genSplit (22%)** — string splitting in mock assertions
+- **fmt.Sprintf (21%)** — formatting error messages in mocks
+- **testify/mock (37%)** — mock method call overhead
+- **In production** (without mocks), memory usage would be 10-20x lower
 
-### تفسیر مقایسه‌ای Benchmark vs k6 Load Test
+---
 
-| معیار | Benchmark (service layer) | k6 Load Test (Docker) |
-|-------|--------------------------|----------------------|
-| GetTask | 24μs | ~5ms (p50) |
-| CreateTask | 55μs | ~10ms |
-| ListTask | 65μs | ~15ms |
-| **فاصله** | **100-200x** | — |
-
-**دلیل فاصله:** benchmark فقط service layer را با mock اجرا می‌کند. k6 تست کل stack را شامل HTTP overhead + Gin routing + JSON serialization + network latency + Redis + PostgreSQL اندازه می‌گیرد. فاصله 100-200x طبیعی است.
