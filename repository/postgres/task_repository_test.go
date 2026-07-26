@@ -216,18 +216,19 @@ func TestTaskRepo_UpdateTaskWithAuditLog(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Verify task was updated
 	fetched, err := repo.GetTask(ctx, created.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "Updated Title", fetched.Title)
 	assert.Equal(t, entity.StatusDone, fetched.Status)
 
-	// Verify audit log was created
 	logs, total, err := repo.GetAuditLogsByTaskID(ctx, created.ID, 1, 10)
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), total)
-	assert.Len(t, logs, 1)
+
+	assert.Equal(t, int64(2), total)
+	assert.Len(t, logs, 2)
+
 	assert.Equal(t, entity.ActionUpdate, logs[0].Action)
+	assert.Equal(t, entity.ActionCreate, logs[1].Action)
 }
 
 func TestTaskRepo_UpdateTaskWithAuditLog_VersionConflict(t *testing.T) {
@@ -392,7 +393,6 @@ func TestTaskRepo_GetAuditLogsByTaskID_Pagination(t *testing.T) {
 
 	created := createTaskHelper(t, repo, "Pagination Audit Test", entity.StatusTodo)
 
-	// Create 5 audit logs via updates
 	for i := 0; i < 5; i++ {
 		err := repo.UpdateTaskWithAuditLog(ctx, entity.Task{
 			ID:      created.ID,
@@ -405,16 +405,16 @@ func TestTaskRepo_GetAuditLogsByTaskID_Pagination(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Get page 1 (2 items)
 	logs1, total, err := repo.GetAuditLogsByTaskID(ctx, created.ID, 1, 2)
 	require.NoError(t, err)
-	assert.Equal(t, int64(5), total)
+
+	assert.Equal(t, int64(6), total)
 	assert.Len(t, logs1, 2)
 
-	// Get page 3 (1 item)
 	logs3, _, err := repo.GetAuditLogsByTaskID(ctx, created.ID, 3, 2)
 	require.NoError(t, err)
-	assert.Len(t, logs3, 1)
+
+	assert.Len(t, logs3, 2)
 }
 
 func TestTaskRepo_GetAuditLogsByTaskID_Empty(t *testing.T) {
