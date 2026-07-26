@@ -16,6 +16,24 @@ type Repository struct {
 	mock.Mock
 }
 
+// CreateAuditLog provides a mock function with given fields: ctx, log
+func (_m *Repository) CreateAuditLog(ctx context.Context, log entity.TaskAuditLog) error {
+	ret := _m.Called(ctx, log)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateAuditLog")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, entity.TaskAuditLog) error); ok {
+		r0 = rf(ctx, log)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // CreateTask provides a mock function with given fields: ctx, t
 func (_m *Repository) CreateTask(ctx context.Context, t entity.Task) (entity.Task, error) {
 	ret := _m.Called(ctx, t)
@@ -44,6 +62,34 @@ func (_m *Repository) CreateTask(ctx context.Context, t entity.Task) (entity.Tas
 	return r0, r1
 }
 
+// CreateTaskWithAuditLog provides a mock function with given fields: ctx, t, auditLog
+func (_m *Repository) CreateTaskWithAuditLog(ctx context.Context, t entity.Task, auditLog entity.TaskAuditLog) (entity.Task, error) {
+	ret := _m.Called(ctx, t, auditLog)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateTaskWithAuditLog")
+	}
+
+	var r0 entity.Task
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, entity.Task, entity.TaskAuditLog) (entity.Task, error)); ok {
+		return rf(ctx, t, auditLog)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, entity.Task, entity.TaskAuditLog) entity.Task); ok {
+		r0 = rf(ctx, t, auditLog)
+	} else {
+		r0 = ret.Get(0).(entity.Task)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, entity.Task, entity.TaskAuditLog) error); ok {
+		r1 = rf(ctx, t, auditLog)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // DeleteTask provides a mock function with given fields: ctx, id
 func (_m *Repository) DeleteTask(ctx context.Context, id entity.ID) error {
 	ret := _m.Called(ctx, id)
@@ -60,6 +106,43 @@ func (_m *Repository) DeleteTask(ctx context.Context, id entity.ID) error {
 	}
 
 	return r0
+}
+
+// GetAuditLogsByTaskID provides a mock function with given fields: ctx, taskID, page, size
+func (_m *Repository) GetAuditLogsByTaskID(ctx context.Context, taskID entity.ID, page int, size int) ([]entity.TaskAuditLog, int64, error) {
+	ret := _m.Called(ctx, taskID, page, size)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetAuditLogsByTaskID")
+	}
+
+	var r0 []entity.TaskAuditLog
+	var r1 int64
+	var r2 error
+	if rf, ok := ret.Get(0).(func(context.Context, entity.ID, int, int) ([]entity.TaskAuditLog, int64, error)); ok {
+		return rf(ctx, taskID, page, size)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, entity.ID, int, int) []entity.TaskAuditLog); ok {
+		r0 = rf(ctx, taskID, page, size)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]entity.TaskAuditLog)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, entity.ID, int, int) int64); ok {
+		r1 = rf(ctx, taskID, page, size)
+	} else {
+		r1 = ret.Get(1).(int64)
+	}
+
+	if rf, ok := ret.Get(2).(func(context.Context, entity.ID, int, int) error); ok {
+		r2 = rf(ctx, taskID, page, size)
+	} else {
+		r2 = ret.Error(2)
+	}
+
+	return r0, r1, r2
 }
 
 // GetTask provides a mock function with given fields: ctx, id
@@ -138,6 +221,24 @@ func (_m *Repository) UpdateTask(ctx context.Context, t entity.Task) error {
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, entity.Task) error); ok {
 		r0 = rf(ctx, t)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// UpdateTaskWithAuditLog provides a mock function with given fields: ctx, t, auditLog
+func (_m *Repository) UpdateTaskWithAuditLog(ctx context.Context, t entity.Task, auditLog entity.TaskAuditLog) error {
+	ret := _m.Called(ctx, t, auditLog)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateTaskWithAuditLog")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, entity.Task, entity.TaskAuditLog) error); ok {
+		r0 = rf(ctx, t, auditLog)
 	} else {
 		r0 = ret.Error(0)
 	}

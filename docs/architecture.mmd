@@ -1,8 +1,8 @@
 graph TD
     Client["🌐 Client / Web / Mobile"]
-    
+
     subgraph "Gin HTTP Server (port 8080)"
-        Middleware["Middleware Layer\nErrorHandler | OTelMetrics | RequestLogger"]
+        Middleware["Middleware Layer\nErrorHandler | OTelTracing | OTelMetrics | RequestLogger"]
         Router["Gin Router"]
         Swagger["Swagger UI\n/swagger/*"]
         MetricsEP["Prometheus\n/metrics"]
@@ -18,7 +18,7 @@ graph TD
     end
 
     subgraph "Repository Layer"
-        PostgresRepo["PostgreSQL Repository\nCRUD + Optimistic Locking\nSoft Delete"]
+        PostgresRepo["PostgreSQL Repository\nCRUD + Audit Log\nOptimistic Locking\nSoft Delete"]
         RedisCache["Redis Cache Store\nSet | Get | Delete\nDeleteByPrefix | TTL"]
     end
 
@@ -26,7 +26,9 @@ graph TD
         PostgresDB[("PostgreSQL 16\ntasks + task_audit_logs")]
         RedisDB[("Redis 7\nCache Store")]
         Prometheus["Prometheus\nMetrics Scraping"]
-        OTelCollector["OTel Collector\nTraces + Metrics"]
+        Tempo["Tempo\nDistributed Tracing"]
+        Loki["Loki\nLog Aggregation"]
+        OTelCollector["OTel Collector\nOTLP → Prometheus + Tempo"]
     end
 
     Client -->|"HTTP REST"| Router
@@ -36,18 +38,29 @@ graph TD
     MetricsEP -.-> Router
     Handler --> Validator
     Handler --> Service
-    Service --> PostgresRepo
-    Service --> RedisCache
-    PostgresRepo -->|"SQL Queries"| PostgresDB
+
+    Service -->|"Create/Update:\nDB Transaction"| PostgresRepo
+    Service -->|"Get:\nParallel Goroutines"| PostgresRepo
+    Service -->|"Cache Read/Write"| RedisCache
+
+    PostgresRepo -->|"SQL Queries\n(Transactional)"| PostgresDB
     RedisCache -->|"Redis Commands"| RedisDB
+
     Service -.->|"OTel Spans"| OTelCollector
-    Middleware -.->|"request_latency\nrequests_total"| Prometheus
-    Service -.->|"tasks_count\ntask_*_total"| Prometheus
+    Middleware -.->|"request_latency\nrequests_total"| OTelCollector
+    Service -.->|"tasks_count\ntask_*_total"| OTelCollector
+
+    OTelCollector -->|"Metrics"| Prometheus
+    OTelCollector -->|"Traces"| Tempo
+
+    Middleware -.->|"Structured Logs"| Loki
 
     style Client fill:#4fc3f7,stroke:#0288d1,color:#000
     style PostgresDB fill:#81c784,stroke:#388e3c,color:#000
     style RedisDB fill:#ef5350,stroke:#c62828,color:#fff
     style Prometheus fill:#ff9800,stroke:#e65100,color:#000
+    style Tempo fill:#7b1fa2,stroke:#4a148c,color:#fff
+    style Loki fill:#00897b,stroke:#004d40,color:#fff
     style OTelCollector fill:#ab47bc,stroke:#7b1fa2,color:#fff
     style Service fill:#fff9c4,stroke:#f9a825,color:#000
     style Handler fill:#e3f2fd,stroke:#1565c0,color:#000

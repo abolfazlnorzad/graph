@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-07-25T15:12:43.400Z",
+  "timestamp": "2026-07-26T07:59:13.481Z",
   "test_type": "spike",
   "max_vus": 1000,
-  "total_requests": 52922,
-  "req_per_sec": "540.16",
+  "total_requests": 45620,
+  "req_per_sec": "395.63",
   "error_rate": "0.00%",
-  "latency_avg": "358.4ms",
+  "latency_avg": "477.9ms",
   "latency_p50": "0.0ms",
-  "latency_p95": "1458.4ms",
+  "latency_p95": "2138.0ms",
   "latency_p99": "0.0ms",
-  "latency_max": "1886.3ms"
+  "latency_max": "3141.4ms"
 }

@@ -42,10 +42,13 @@ type CreateTaskResponse struct {
 }
 
 type GetTaskByIDRequest struct {
-	ID entity.ID `json:"id"`
+	ID              entity.ID       `json:"id"`
+	AuditPage       int             `json:"audit_page"`
+	AuditPageSize   int             `json:"audit_page_size"`
 }
 type GetTaskByIDResponse struct {
-	Task TaskResponse `json:"task"`
+	Task            TaskResponse        `json:"task"`
+	AuditPagination *PaginationResponse `json:"audit_pagination,omitempty"`
 }
 
 type ListTasksRequest struct {
