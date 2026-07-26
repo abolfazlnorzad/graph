@@ -63,7 +63,7 @@ func (h Handler) CreateTask(c *gin.Context) {
 // @Param        id              path      int  true  "Task ID"
 // @Param        audit_page      query     int  false "Audit log page number"     default(1)
 // @Param        audit_page_size query     int  false "Audit log page size"       default(10)
-// @Success      200  {object}  middleware.Envelope{data=param.TaskResponse}
+// @Success      200  {object}  middleware.Envelope{data=param.GetTaskByIDResponse}
 // @Failure      404  {object}  middleware.Envelope
 // @Failure      500  {object}  middleware.Envelope
 // @Router       /tasks/{id} [get]
@@ -87,7 +87,7 @@ func (h Handler) GetTask(c *gin.Context) {
 		return
 	}
 
-	middleware.JSONResponse(c, http.StatusOK, resp.Task)
+	middleware.JSONResponse(c, http.StatusOK, resp)
 }
 
 // UpdateTask godoc
