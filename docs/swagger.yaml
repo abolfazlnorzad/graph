@@ -135,6 +135,13 @@ paths:
         type: integer
       - default: 25
         description: Page size
+        enum:
+        - 1
+        - 5
+        - 10
+        - 15
+        - 25
+        - 50
         in: query
         name: page_size
         type: integer

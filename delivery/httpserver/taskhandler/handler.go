@@ -150,7 +150,7 @@ func (h Handler) DeleteTask(c *gin.Context) {
 // @Tags         tasks
 // @Produce      json
 // @Param        page_number  query     int     false  "Page number"       default(1)
-// @Param        page_size    query     int     false  "Page size"         default(25)
+// @Param        page_size    query     int     false  "Page size"         Enums(1, 5, 10, 15, 25, 50)  default(25)
 // @Param        status       query     string  false  "Filter by status"  Enums(TODO, IN_PROGRESS, REVIEW, DONE, REJECTED, BLOCKED, CANCELED)
 // @Param        assignee     query     string  false  "Filter by assignee"
 // @Success      200          {object}  middleware.Envelope{data=object{tasks=[]param.TaskResponse, pagination=param.PaginationResponse}}

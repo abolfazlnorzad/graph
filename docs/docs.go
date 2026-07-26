@@ -34,6 +34,14 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            1,
+                            5,
+                            10,
+                            15,
+                            25,
+                            50
+                        ],
                         "type": "integer",
                         "default": 25,
                         "description": "Page size",
