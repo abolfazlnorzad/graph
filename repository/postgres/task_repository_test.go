@@ -88,207 +88,22 @@ func setupPostgresTest(t *testing.T) *pgrepo.TaskRepo {
 	return pgrepo.NewTaskRepo(db, logger)
 }
 
-func TestTaskRepo_CreateTask(t *testing.T) {
-	repo := setupPostgresTest(t)
-	ctx := context.Background()
-
-	created, err := repo.CreateTask(ctx, entity.Task{
-		Title:   "Integration Test Task",
-		Status:  entity.StatusTodo,
+// createTaskHelper is a test helper that creates a task using CreateTaskWithAuditLog.
+func createTaskHelper(t *testing.T, repo *pgrepo.TaskRepo, title string, status entity.TaskStatus) entity.Task {
+	t.Helper()
+	created, err := repo.CreateTaskWithAuditLog(context.Background(), entity.Task{
+		Title:   title,
+		Status:  status,
 		Version: 1,
-	})
-
-	require.NoError(t, err)
-	assert.NotZero(t, created.ID)
-	assert.Equal(t, "Integration Test Task", created.Title)
-	assert.Equal(t, entity.StatusTodo, created.Status)
-	assert.False(t, created.CreatedAt.IsZero())
-	assert.False(t, created.UpdatedAt.IsZero())
-}
-
-func TestTaskRepo_GetTask(t *testing.T) {
-	repo := setupPostgresTest(t)
-	ctx := context.Background()
-
-	created, err := repo.CreateTask(ctx, entity.Task{
-		Title:   "Get Test",
-		Status:  entity.StatusInProgress,
-		Version: 1,
+	}, entity.TaskAuditLog{
+		Action: entity.ActionCreate,
+		NewState: map[string]any{
+			"title":  title,
+			"status": status,
+		},
 	})
 	require.NoError(t, err)
-
-	fetched, err := repo.GetTask(ctx, created.ID)
-
-	require.NoError(t, err)
-	assert.Equal(t, created.ID, fetched.ID)
-	assert.Equal(t, "Get Test", fetched.Title)
-	assert.Equal(t, entity.StatusInProgress, fetched.Status)
-}
-
-func TestTaskRepo_GetTask_NotFound(t *testing.T) {
-	repo := setupPostgresTest(t)
-	ctx := context.Background()
-
-	_, err := repo.GetTask(ctx, 99999)
-	assert.Error(t, err)
-}
-
-func TestTaskRepo_UpdateTask(t *testing.T) {
-	repo := setupPostgresTest(t)
-	ctx := context.Background()
-
-	created, err := repo.CreateTask(ctx, entity.Task{
-		Title:   "Update Test",
-		Status:  entity.StatusTodo,
-		Version: 1,
-	})
-	require.NoError(t, err)
-
-	newTitle := "Updated Title"
-	newStatus := entity.StatusDone
-	err = repo.UpdateTask(ctx, entity.Task{
-		ID:      created.ID,
-		Title:   newTitle,
-		Status:  newStatus,
-		Version: 2,
-	})
-	require.NoError(t, err)
-
-	fetched, err := repo.GetTask(ctx, created.ID)
-	require.NoError(t, err)
-	assert.Equal(t, newTitle, fetched.Title)
-	assert.Equal(t, newStatus, fetched.Status)
-}
-
-func TestTaskRepo_UpdateTask_VersionConflict(t *testing.T) {
-	repo := setupPostgresTest(t)
-	ctx := context.Background()
-
-	created, err := repo.CreateTask(ctx, entity.Task{
-		Title:   "Conflict Test",
-		Status:  entity.StatusTodo,
-		Version: 1,
-	})
-	require.NoError(t, err)
-
-	err = repo.UpdateTask(ctx, entity.Task{
-		ID:      created.ID,
-		Title:   "Should Fail",
-		Status:  entity.StatusTodo,
-		Version: 1,
-	})
-	assert.Error(t, err)
-}
-
-func TestTaskRepo_DeleteTask(t *testing.T) {
-	repo := setupPostgresTest(t)
-	ctx := context.Background()
-
-	created, err := repo.CreateTask(ctx, entity.Task{
-		Title:   "Delete Test",
-		Status:  entity.StatusTodo,
-		Version: 1,
-	})
-	require.NoError(t, err)
-
-	err = repo.DeleteTask(ctx, created.ID)
-	require.NoError(t, err)
-
-	_, err = repo.GetTask(ctx, created.ID)
-	assert.Error(t, err)
-}
-
-func TestTaskRepo_DeleteTask_NotFound(t *testing.T) {
-	repo := setupPostgresTest(t)
-	ctx := context.Background()
-
-	err := repo.DeleteTask(ctx, 99999)
-	assert.Error(t, err)
-}
-
-func TestTaskRepo_ListTask(t *testing.T) {
-	repo := setupPostgresTest(t)
-	ctx := context.Background()
-
-	for i := 0; i < 3; i++ {
-		_, err := repo.CreateTask(ctx, entity.Task{
-			Title:   fmt.Sprintf("List Task %d", i),
-			Status:  entity.StatusTodo,
-			Version: 1,
-		})
-		require.NoError(t, err)
-	}
-
-	tasks, total, err := repo.ListTask(ctx, service.ListTaskCriteria{
-		PageSize:   10,
-		PageNumber: 1,
-	})
-
-	require.NoError(t, err)
-	assert.Len(t, tasks, 3)
-	assert.Equal(t, int64(3), total)
-}
-
-func TestTaskRepo_ListTask_Empty(t *testing.T) {
-	repo := setupPostgresTest(t)
-	ctx := context.Background()
-
-	tasks, total, err := repo.ListTask(ctx, service.ListTaskCriteria{
-		PageSize:   10,
-		PageNumber: 1,
-	})
-
-	require.NoError(t, err)
-	assert.Empty(t, tasks)
-	assert.Equal(t, int64(0), total)
-}
-
-func TestTaskRepo_ListTask_WithStatusFilter(t *testing.T) {
-	repo := setupPostgresTest(t)
-	ctx := context.Background()
-
-	_, _ = repo.CreateTask(ctx, entity.Task{Title: "Todo", Status: entity.StatusTodo, Version: 1})
-	_, _ = repo.CreateTask(ctx, entity.Task{Title: "Done", Status: entity.StatusDone, Version: 1})
-
-	status := entity.StatusTodo
-	tasks, total, err := repo.ListTask(ctx, service.ListTaskCriteria{
-		PageSize:   10,
-		PageNumber: 1,
-		Status:     &status,
-	})
-
-	require.NoError(t, err)
-	assert.Len(t, tasks, 1)
-	assert.Equal(t, int64(1), total)
-	assert.Equal(t, entity.StatusTodo, tasks[0].Status)
-}
-
-func TestTaskRepo_ListTask_Pagination(t *testing.T) {
-	repo := setupPostgresTest(t)
-	ctx := context.Background()
-
-	for i := 0; i < 5; i++ {
-		_, _ = repo.CreateTask(ctx, entity.Task{
-			Title:   fmt.Sprintf("Page Task %d", i),
-			Status:  entity.StatusTodo,
-			Version: 1,
-		})
-	}
-
-	tasks1, total1, err := repo.ListTask(ctx, service.ListTaskCriteria{
-		PageSize:   2,
-		PageNumber: 1,
-	})
-	require.NoError(t, err)
-	assert.Len(t, tasks1, 2)
-	assert.Equal(t, int64(5), total1)
-
-	tasks3, _, err := repo.ListTask(ctx, service.ListTaskCriteria{
-		PageSize:   2,
-		PageNumber: 3,
-	})
-	require.NoError(t, err)
-	assert.Len(t, tasks3, 1)
+	return created
 }
 
 func TestTaskRepo_CreateTaskWithAuditLog(t *testing.T) {
@@ -355,18 +170,35 @@ func TestTaskRepo_CreateTaskWithAuditLog_VerifyTaskAndAudit(t *testing.T) {
 	assert.Equal(t, "Transaction Test", logs[0].NewState["title"])
 }
 
+func TestTaskRepo_GetTask(t *testing.T) {
+	repo := setupPostgresTest(t)
+	ctx := context.Background()
+
+	created := createTaskHelper(t, repo, "Get Test", entity.StatusInProgress)
+
+	fetched, err := repo.GetTask(ctx, created.ID)
+
+	require.NoError(t, err)
+	assert.Equal(t, created.ID, fetched.ID)
+	assert.Equal(t, "Get Test", fetched.Title)
+	assert.Equal(t, entity.StatusInProgress, fetched.Status)
+}
+
+func TestTaskRepo_GetTask_NotFound(t *testing.T) {
+	repo := setupPostgresTest(t)
+	ctx := context.Background()
+
+	_, err := repo.GetTask(ctx, 99999)
+	assert.Error(t, err)
+}
+
 func TestTaskRepo_UpdateTaskWithAuditLog(t *testing.T) {
 	repo := setupPostgresTest(t)
 	ctx := context.Background()
 
-	created, err := repo.CreateTask(ctx, entity.Task{
-		Title:   "Audit Update Test",
-		Status:  entity.StatusTodo,
-		Version: 1,
-	})
-	require.NoError(t, err)
+	created := createTaskHelper(t, repo, "Audit Update Test", entity.StatusTodo)
 
-	err = repo.UpdateTaskWithAuditLog(ctx, entity.Task{
+	err := repo.UpdateTaskWithAuditLog(ctx, entity.Task{
 		ID:      created.ID,
 		Title:   "Updated Title",
 		Status:  entity.StatusDone,
@@ -402,15 +234,10 @@ func TestTaskRepo_UpdateTaskWithAuditLog_VersionConflict(t *testing.T) {
 	repo := setupPostgresTest(t)
 	ctx := context.Background()
 
-	created, err := repo.CreateTask(ctx, entity.Task{
-		Title:   "Conflict Audit Test",
-		Status:  entity.StatusTodo,
-		Version: 1,
-	})
-	require.NoError(t, err)
+	created := createTaskHelper(t, repo, "Conflict Audit Test", entity.StatusTodo)
 
 	// Try to update with wrong version
-	err = repo.UpdateTaskWithAuditLog(ctx, entity.Task{
+	err := repo.UpdateTaskWithAuditLog(ctx, entity.Task{
 		ID:      created.ID,
 		Title:   "Should Fail",
 		Version: 1, // wrong version, should be 2
@@ -424,6 +251,103 @@ func TestTaskRepo_UpdateTaskWithAuditLog_VersionConflict(t *testing.T) {
 	fetched, err := repo.GetTask(ctx, created.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "Conflict Audit Test", fetched.Title)
+}
+
+func TestTaskRepo_DeleteTask(t *testing.T) {
+	repo := setupPostgresTest(t)
+	ctx := context.Background()
+
+	created := createTaskHelper(t, repo, "Delete Test", entity.StatusTodo)
+
+	err := repo.DeleteTask(ctx, created.ID)
+	require.NoError(t, err)
+
+	_, err = repo.GetTask(ctx, created.ID)
+	assert.Error(t, err)
+}
+
+func TestTaskRepo_DeleteTask_NotFound(t *testing.T) {
+	repo := setupPostgresTest(t)
+	ctx := context.Background()
+
+	err := repo.DeleteTask(ctx, 99999)
+	assert.Error(t, err)
+}
+
+func TestTaskRepo_ListTask(t *testing.T) {
+	repo := setupPostgresTest(t)
+	ctx := context.Background()
+
+	for i := 0; i < 3; i++ {
+		createTaskHelper(t, repo, fmt.Sprintf("List Task %d", i), entity.StatusTodo)
+	}
+
+	tasks, total, err := repo.ListTask(ctx, service.ListTaskCriteria{
+		PageSize:   10,
+		PageNumber: 1,
+	})
+
+	require.NoError(t, err)
+	assert.Len(t, tasks, 3)
+	assert.Equal(t, int64(3), total)
+}
+
+func TestTaskRepo_ListTask_Empty(t *testing.T) {
+	repo := setupPostgresTest(t)
+	ctx := context.Background()
+
+	tasks, total, err := repo.ListTask(ctx, service.ListTaskCriteria{
+		PageSize:   10,
+		PageNumber: 1,
+	})
+
+	require.NoError(t, err)
+	assert.Empty(t, tasks)
+	assert.Equal(t, int64(0), total)
+}
+
+func TestTaskRepo_ListTask_WithStatusFilter(t *testing.T) {
+	repo := setupPostgresTest(t)
+	ctx := context.Background()
+
+	createTaskHelper(t, repo, "Todo", entity.StatusTodo)
+	createTaskHelper(t, repo, "Done", entity.StatusDone)
+
+	status := entity.StatusTodo
+	tasks, total, err := repo.ListTask(ctx, service.ListTaskCriteria{
+		PageSize:   10,
+		PageNumber: 1,
+		Status:     &status,
+	})
+
+	require.NoError(t, err)
+	assert.Len(t, tasks, 1)
+	assert.Equal(t, int64(1), total)
+	assert.Equal(t, entity.StatusTodo, tasks[0].Status)
+}
+
+func TestTaskRepo_ListTask_Pagination(t *testing.T) {
+	repo := setupPostgresTest(t)
+	ctx := context.Background()
+
+	for i := 0; i < 5; i++ {
+		createTaskHelper(t, repo, fmt.Sprintf("Page Task %d", i), entity.StatusTodo)
+	}
+
+	tasks1, total1, err := repo.ListTask(ctx, service.ListTaskCriteria{
+		PageSize:   2,
+		PageNumber: 1,
+	})
+	require.NoError(t, err)
+	assert.Len(t, tasks1, 2)
+	assert.Equal(t, int64(5), total1)
+
+	tasks3, _, err := repo.ListTask(ctx, service.ListTaskCriteria{
+		PageSize:   2,
+		PageNumber: 3,
+	})
+	require.NoError(t, err)
+	assert.Len(t, tasks3, 1)
 }
 
 func TestTaskRepo_GetAuditLogsByTaskID(t *testing.T) {
@@ -466,16 +390,11 @@ func TestTaskRepo_GetAuditLogsByTaskID_Pagination(t *testing.T) {
 	repo := setupPostgresTest(t)
 	ctx := context.Background()
 
-	created, err := repo.CreateTask(ctx, entity.Task{
-		Title:   "Pagination Audit Test",
-		Status:  entity.StatusTodo,
-		Version: 1,
-	})
-	require.NoError(t, err)
+	created := createTaskHelper(t, repo, "Pagination Audit Test", entity.StatusTodo)
 
 	// Create 5 audit logs via updates
 	for i := 0; i < 5; i++ {
-		err = repo.UpdateTaskWithAuditLog(ctx, entity.Task{
+		err := repo.UpdateTaskWithAuditLog(ctx, entity.Task{
 			ID:      created.ID,
 			Title:   fmt.Sprintf("Update %d", i),
 			Version: int16(i + 2),

@@ -196,7 +196,7 @@ make test-coverage     # Coverage report (HTML)
 make test-race         # Race detector
 ```
 
-**Coverage:** ~85% (service: 91.6%, postgres: 77.5%, redis: 77.3%, pkg: 87-94%)
+**Coverage:** ~85% (service: 91.9%, postgres: 77.5%, redis: 77.3%, pkg: 87-94%)
 
 ---
 
@@ -208,6 +208,8 @@ make test-race         # Race detector
 ---
 
 ## Observability
+
+> All observability signals — metrics, traces, and logs — can be viewed and correlated in **Grafana** dashboards. Access at `http://localhost:3000` (admin/admin).
 
 ### Metrics (OTLP via OTel Collector)
 - **Prometheus:** `http://localhost:9090`
@@ -223,14 +225,14 @@ Key metrics: `requests_total`, `request_latency_histogram`, `tasks_count`, `task
 ### Logging (Loki + Promtail)
 - **Loki:** `http://localhost:3100`
 - Structured JSON logs with `trace_id`, `span_id`, `op`, `level`
-- Grafana Logs dashboard for log exploration
 
 ### Grafana Dashboards
+
+All observability data is available through pre-configured Grafana dashboards:
+
 - **Graph - Application:** Request rate, latency (p50/p95/p99), business metrics, traces
 - **Graph - Infrastructure:** Go runtime, PostgreSQL, Redis, Service Map
 - **Graph - Logs:** Log volume, error logs, live stream, trace correlation
-
-Access at `http://localhost:3000` (admin/admin)
 
 ---
 

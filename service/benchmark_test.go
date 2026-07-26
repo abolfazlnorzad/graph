@@ -30,6 +30,8 @@ func BenchmarkCreateTask(b *testing.B) {
 
 	mockRepo.On("CreateTaskWithAuditLog", mock.Anything, mock.AnythingOfType("entity.Task"), mock.AnythingOfType("entity.TaskAuditLog")).
 		Return(createdTask, nil)
+	mockRepo.On("GetAuditLogsByTaskID", mock.Anything, mock.Anything, 1, 10).
+		Return([]entity.TaskAuditLog{}, int64(0), nil)
 	mockCache.On("DeleteByPrefix", mock.Anything, mock.Anything).Return(nil)
 	mockCache.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(nil)
@@ -93,6 +95,8 @@ func BenchmarkUpdateTask(b *testing.B) {
 		Return(existingTask, nil)
 	mockRepo.On("UpdateTaskWithAuditLog", mock.Anything, mock.AnythingOfType("entity.Task"), mock.AnythingOfType("entity.TaskAuditLog")).
 		Return(nil)
+	mockRepo.On("GetAuditLogsByTaskID", mock.Anything, mock.Anything, 1, 10).
+		Return([]entity.TaskAuditLog{}, int64(0), nil)
 	mockCache.On("DeleteByPrefix", mock.Anything, mock.Anything).Return(nil)
 	mockCache.On("Delete", mock.Anything, mock.Anything).Return(nil)
 	mockMetrics.On("RecordTaskUpdatedDuration", mock.Anything, mock.AnythingOfType("float64")).Return()

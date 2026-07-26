@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/abolfazlnorzad/graph/entity"
@@ -26,8 +27,6 @@ type ListTaskCriteria struct {
 
 //go:generate mockery --name=Repository --output=./mocks --outpkg=mocks
 type Repository interface {
-	CreateTask(ctx context.Context, t entity.Task) (entity.Task, error)
-	UpdateTask(ctx context.Context, t entity.Task) error
 	DeleteTask(ctx context.Context, id entity.ID) error
 	GetTask(ctx context.Context, id entity.ID) (entity.Task, error)
 	ListTask(ctx context.Context, criteria ListTaskCriteria) ([]entity.Task, int64, error)
@@ -108,6 +107,13 @@ func (s Service) CreateTask(ctx context.Context, req param.CreateTaskRequest) (p
 		slog.String("status", string(req.Status)),
 	)
 
+	// Default status to TODO if empty, normalize to uppercase
+	if req.Status == "" {
+		req.Status = entity.StatusTodo
+	} else {
+		req.Status = entity.TaskStatus(strings.ToUpper(string(req.Status)))
+	}
+
 	if err := s.vld.ValidateCreateTask(req); err != nil {
 		s.mtr.IncTaskCreated(ctx, "fail", "validation_error")
 		trace.RecordError(span, err)
@@ -156,8 +162,26 @@ func (s Service) CreateTask(ctx context.Context, req param.CreateTaskRequest) (p
 	s.mtr.IncTasksCount(ctx, string(t.Status), "none")
 	reqLogger.InfoContext(ctx, "task created", slog.Int64("task_id", int64(t.ID)))
 
+	taskResp := mapTaskEntityToTaskResponse(t)
+
+	auditLogs, _, auditErr := s.repo.GetAuditLogsByTaskID(ctx, t.ID, 1, 10)
+	if auditErr == nil {
+		auditResponses := make([]param.AuditLogResponse, 0, len(auditLogs))
+		for _, l := range auditLogs {
+			auditResponses = append(auditResponses, param.AuditLogResponse{
+				ID:            l.ID,
+				TaskID:        l.TaskID,
+				Action:        l.Action,
+				PreviousState: l.PreviousState,
+				NewState:      l.NewState,
+				CreatedAt:     l.CreatedAt,
+			})
+		}
+		taskResp.AuditLogs = auditResponses
+	}
+
 	return param.CreateTaskResponse{
-		Task: mapTaskEntityToTaskResponse(t),
+		Task: taskResp,
 	}, nil
 }
 
@@ -177,6 +201,12 @@ func (s Service) UpdateTask(ctx context.Context, req param.UpdateTaskRequest) (p
 		slog.String("op", op),
 		slog.Int64("task_id", int64(req.ID)),
 	)
+
+	// Normalize status to uppercase if provided
+	if req.Status != nil {
+		normalized := entity.TaskStatus(strings.ToUpper(string(*req.Status)))
+		req.Status = &normalized
+	}
 
 	if err := s.vld.ValidateUpdateTask(req); err != nil {
 		s.mtr.IncTaskUpdated(ctx, "fail", "validation_error")
@@ -267,8 +297,26 @@ func (s Service) UpdateTask(ctx context.Context, req param.UpdateTaskRequest) (p
 	s.mtr.IncTaskUpdated(ctx, "success", "none")
 	reqLogger.InfoContext(ctx, "task updated with audit log", slog.Int64("task_id", int64(existing.ID)))
 
+	taskResp := mapTaskEntityToTaskResponse(existing)
+
+	auditLogs, _, auditErr := s.repo.GetAuditLogsByTaskID(ctx, existing.ID, 1, 10)
+	if auditErr == nil {
+		auditResponses := make([]param.AuditLogResponse, 0, len(auditLogs))
+		for _, l := range auditLogs {
+			auditResponses = append(auditResponses, param.AuditLogResponse{
+				ID:            l.ID,
+				TaskID:        l.TaskID,
+				Action:        l.Action,
+				PreviousState: l.PreviousState,
+				NewState:      l.NewState,
+				CreatedAt:     l.CreatedAt,
+			})
+		}
+		taskResp.AuditLogs = auditResponses
+	}
+
 	return param.UpdateTaskResponse{
-		Task: mapTaskEntityToTaskResponse(existing),
+		Task: taskResp,
 	}, nil
 }
 

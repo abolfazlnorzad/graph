@@ -19,6 +19,20 @@ import (
 	"github.com/abolfazlnorzad/graph/validation"
 )
 
+func newMockAuditLog(taskID entity.ID) entity.TaskAuditLog {
+	return entity.TaskAuditLog{
+		ID:     1,
+		TaskID: taskID,
+		Action: entity.ActionCreate,
+		NewState: map[string]any{
+			"title":   "test",
+			"status":  entity.StatusTodo,
+			"version": 1,
+		},
+		CreatedAt: time.Now(),
+	}
+}
+
 func TestService_CreateTask(t *testing.T) {
 	nopLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	vld := validation.NewValidator()
@@ -43,6 +57,9 @@ func TestService_CreateTask(t *testing.T) {
 		mockRepo.On("CreateTaskWithAuditLog", mock.Anything, mock.AnythingOfType("entity.Task"), mock.AnythingOfType("entity.TaskAuditLog")).
 			Return(createdTask, nil).Once()
 
+		mockRepo.On("GetAuditLogsByTaskID", mock.Anything, entity.ID(1), 1, 10).
+			Return([]entity.TaskAuditLog{newMockAuditLog(1)}, int64(1), nil).Once()
+
 		mockCache.On("DeleteByPrefix", mock.Anything, "tasks:list:").Return(nil).Once()
 		mockCache.On("Set", mock.Anything, "task:1", createdTask, 5*time.Minute).
 			Return(nil).Once()
@@ -61,6 +78,7 @@ func TestService_CreateTask(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, entity.ID(1), resp.Task.ID)
 		assert.Equal(t, "Fix Login Bug", resp.Task.Title)
+		assert.Len(t, resp.Task.AuditLogs, 1)
 
 		mockRepo.AssertExpectations(t)
 		mockCache.AssertExpectations(t)
@@ -78,6 +96,9 @@ func TestService_CreateTask(t *testing.T) {
 		mockRepo.On("CreateTaskWithAuditLog", mock.Anything, mock.AnythingOfType("entity.Task"), mock.AnythingOfType("entity.TaskAuditLog")).
 			Return(createdTask, nil).Once()
 
+		mockRepo.On("GetAuditLogsByTaskID", mock.Anything, entity.ID(2), 1, 10).
+			Return([]entity.TaskAuditLog{newMockAuditLog(2)}, int64(1), nil).Once()
+
 		mockCache.On("DeleteByPrefix", mock.Anything, "tasks:list:").Return(nil).Once()
 		mockCache.On("Set", mock.Anything, "task:2", createdTask, 5*time.Minute).
 			Return(errors.New("redis timeout")).Once()
@@ -92,6 +113,7 @@ func TestService_CreateTask(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t, entity.ID(2), resp.Task.ID)
+		assert.Len(t, resp.Task.AuditLogs, 1)
 
 		mockRepo.AssertExpectations(t)
 	})
@@ -163,6 +185,86 @@ func TestService_CreateTask(t *testing.T) {
 		mockCache.AssertNotCalled(t, "Set")
 		mockCache.AssertNotCalled(t, "DeleteByPrefix")
 	})
+
+	t.Run("Success - Lowercase todo status normalized", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		req := param.CreateTaskRequest{Title: "Lowercase Task", Status: "todo"}
+
+		createdTask := entity.Task{
+			ID:      3,
+			Title:   "Lowercase Task",
+			Status:  entity.StatusTodo,
+			Version: 1,
+		}
+
+		mockRepo.On("CreateTaskWithAuditLog", mock.Anything, mock.MatchedBy(func(t entity.Task) bool {
+			return t.Status == entity.StatusTodo
+		}), mock.AnythingOfType("entity.TaskAuditLog")).
+			Return(createdTask, nil).Once()
+
+		mockRepo.On("GetAuditLogsByTaskID", mock.Anything, entity.ID(3), 1, 10).
+			Return([]entity.TaskAuditLog{}, int64(0), nil).Once()
+
+		mockCache.On("DeleteByPrefix", mock.Anything, "tasks:list:").Return(nil).Once()
+		mockCache.On("Set", mock.Anything, "task:3", createdTask, 5*time.Minute).Return(nil).Once()
+
+		mockMetrics.On("RecordTaskCreatedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskCreated", mock.Anything, "success", "none").Return().Once()
+		mockMetrics.On("IncTasksCount", mock.Anything, string(entity.StatusTodo), "none").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.CreateTask(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Equal(t, entity.ID(3), resp.Task.ID)
+		assert.Equal(t, entity.StatusTodo, resp.Task.Status)
+
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("Success - Empty status defaults to TODO", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		req := param.CreateTaskRequest{Title: "Default Status Task"}
+
+		createdTask := entity.Task{
+			ID:      4,
+			Title:   "Default Status Task",
+			Status:  entity.StatusTodo,
+			Version: 1,
+		}
+
+		mockRepo.On("CreateTaskWithAuditLog", mock.Anything, mock.MatchedBy(func(t entity.Task) bool {
+			return t.Status == entity.StatusTodo
+		}), mock.AnythingOfType("entity.TaskAuditLog")).
+			Return(createdTask, nil).Once()
+
+		mockRepo.On("GetAuditLogsByTaskID", mock.Anything, entity.ID(4), 1, 10).
+			Return([]entity.TaskAuditLog{}, int64(0), nil).Once()
+
+		mockCache.On("DeleteByPrefix", mock.Anything, "tasks:list:").Return(nil).Once()
+		mockCache.On("Set", mock.Anything, "task:4", createdTask, 5*time.Minute).Return(nil).Once()
+
+		mockMetrics.On("RecordTaskCreatedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskCreated", mock.Anything, "success", "none").Return().Once()
+		mockMetrics.On("IncTasksCount", mock.Anything, string(entity.StatusTodo), "none").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.CreateTask(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Equal(t, entity.ID(4), resp.Task.ID)
+		assert.Equal(t, entity.StatusTodo, resp.Task.Status)
+
+		mockRepo.AssertExpectations(t)
+	})
 }
 
 func TestService_UpdateTask(t *testing.T) {
@@ -194,6 +296,9 @@ func TestService_UpdateTask(t *testing.T) {
 		mockRepo.On("UpdateTaskWithAuditLog", mock.Anything, mock.MatchedBy(func(t entity.Task) bool {
 			return t.Title == "Updated Title" && t.Version == 2
 		}), mock.AnythingOfType("entity.TaskAuditLog")).Return(nil).Once()
+
+		mockRepo.On("GetAuditLogsByTaskID", mock.Anything, entity.ID(1), 1, 10).
+			Return([]entity.TaskAuditLog{}, int64(0), nil).Once()
 
 		mockCache.On("DeleteByPrefix", mock.Anything, "tasks:list:").Return(nil).Once()
 		mockCache.On("Delete", mock.Anything, "task:1").Return(nil).Once()
@@ -239,6 +344,55 @@ func TestService_UpdateTask(t *testing.T) {
 		mockRepo.On("UpdateTaskWithAuditLog", mock.Anything, mock.MatchedBy(func(t entity.Task) bool {
 			return t.Status == entity.StatusInProgress && t.Version == 2
 		}), mock.AnythingOfType("entity.TaskAuditLog")).Return(nil).Once()
+
+		mockRepo.On("GetAuditLogsByTaskID", mock.Anything, entity.ID(1), 1, 10).
+			Return([]entity.TaskAuditLog{}, int64(0), nil).Once()
+
+		mockCache.On("DeleteByPrefix", mock.Anything, "tasks:list:").Return(nil).Once()
+		mockCache.On("Delete", mock.Anything, "task:1").Return(nil).Once()
+
+		mockMetrics.On("RecordTaskUpdatedDuration", mock.Anything, mock.AnythingOfType("float64")).Return().Once()
+		mockMetrics.On("IncTaskUpdated", mock.Anything, "success", "none").Return().Once()
+
+		svc := service.NewService(mockRepo, mockCache, nopLogger, mockMetrics, vld)
+
+		resp, err := svc.UpdateTask(context.Background(), req)
+
+		assert.NoError(t, err)
+		assert.Equal(t, entity.StatusInProgress, resp.Task.Status)
+		assert.Equal(t, int16(2), resp.Task.Version)
+
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("Success - Lowercase status normalized on update", func(t *testing.T) {
+		mockRepo := new(mocks.Repository)
+		mockCache := new(mocks.CacheStore)
+		mockMetrics := new(mocks.Metrics)
+
+		lowerStatus := entity.TaskStatus("in_progress")
+		req := param.UpdateTaskRequest{
+			ID:      1,
+			Status:  &lowerStatus,
+			Version: 1,
+		}
+
+		existingTask := entity.Task{
+			ID:      1,
+			Title:   "My Task",
+			Status:  entity.StatusTodo,
+			Version: 1,
+		}
+
+		mockRepo.On("GetTask", mock.Anything, entity.ID(1)).
+			Return(existingTask, nil).Once()
+
+		mockRepo.On("UpdateTaskWithAuditLog", mock.Anything, mock.MatchedBy(func(t entity.Task) bool {
+			return t.Status == entity.StatusInProgress && t.Version == 2
+		}), mock.AnythingOfType("entity.TaskAuditLog")).Return(nil).Once()
+
+		mockRepo.On("GetAuditLogsByTaskID", mock.Anything, entity.ID(1), 1, 10).
+			Return([]entity.TaskAuditLog{}, int64(0), nil).Once()
 
 		mockCache.On("DeleteByPrefix", mock.Anything, "tasks:list:").Return(nil).Once()
 		mockCache.On("Delete", mock.Anything, "task:1").Return(nil).Once()

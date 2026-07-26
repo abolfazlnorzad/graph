@@ -32,43 +32,6 @@ func NewTaskRepo(db *postgresdb.Database, logger *slog.Logger) *TaskRepo {
 	}
 }
 
-func (r *TaskRepo) CreateTask(ctx context.Context, t entity.Task) (entity.Task, error) {
-	const op = "postgres.CreateTask"
-
-	ctx, span := trace.Tracer().Start(ctx, op)
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.String("task.title", t.Title),
-		attribute.String("task.status", string(t.Status)),
-	)
-
-	query := `
-		INSERT INTO tasks (title, description, status, assignee, version)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, created_at, updated_at
-	`
-
-	err := r.db.Pool.QueryRow(ctx, query,
-		t.Title,
-		t.Description,
-		t.Status,
-		t.Assignee,
-		t.Version,
-	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
-
-	if err != nil {
-		trace.RecordError(span, err)
-		return entity.Task{}, richerror.New(op).
-			WithErr(err).
-			WithKind(richerror.KindUnexpected).
-			WithUserMsgKey(msg.ErrUnexpected)
-	}
-
-	span.SetAttributes(attribute.Int64("task.id", int64(t.ID)))
-	return t, nil
-}
-
 func (r *TaskRepo) GetTask(ctx context.Context, id entity.ID) (entity.Task, error) {
 	const op = "postgres.GetTask"
 
@@ -101,55 +64,6 @@ func (r *TaskRepo) GetTask(ctx context.Context, id entity.ID) (entity.Task, erro
 	}
 
 	return t, nil
-}
-
-func (r *TaskRepo) UpdateTask(ctx context.Context, t entity.Task) error {
-	const op = "postgres.UpdateTask"
-
-	ctx, span := trace.Tracer().Start(ctx, op)
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int64("task.id", int64(t.ID)),
-		attribute.Int("task.version", int(t.Version)),
-	)
-
-	query := `
-		UPDATE tasks 
-		SET title = $1, 
-		    description = $2, 
-		    status = $3, 
-		    assignee = $4, 
-		    version = version + 1, 
-		    updated_at = CURRENT_TIMESTAMP
-		WHERE id = $5 AND version = $6 AND deleted_at IS NULL
-	`
-
-	expectedDBVersion := t.Version - 1
-
-	cmdTag, err := r.db.Pool.Exec(ctx, query,
-		t.Title,
-		t.Description,
-		t.Status,
-		t.Assignee,
-		t.ID,
-		expectedDBVersion,
-	)
-
-	if err != nil {
-		trace.RecordError(span, err)
-		return richerror.New(op).WithErr(err)
-	}
-
-	if cmdTag.RowsAffected() == 0 {
-		err := richerror.New(op).
-			WithKind(richerror.KindConflict).
-			WithMessage("task not found or version conflict during update")
-		trace.RecordError(span, err)
-		return err
-	}
-
-	return nil
 }
 
 func (r *TaskRepo) DeleteTask(ctx context.Context, id entity.ID) error {

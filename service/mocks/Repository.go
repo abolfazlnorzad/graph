@@ -16,52 +16,6 @@ type Repository struct {
 	mock.Mock
 }
 
-// CreateAuditLog provides a mock function with given fields: ctx, log
-func (_m *Repository) CreateAuditLog(ctx context.Context, log entity.TaskAuditLog) error {
-	ret := _m.Called(ctx, log)
-
-	if len(ret) == 0 {
-		panic("no return value specified for CreateAuditLog")
-	}
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, entity.TaskAuditLog) error); ok {
-		r0 = rf(ctx, log)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
-// CreateTask provides a mock function with given fields: ctx, t
-func (_m *Repository) CreateTask(ctx context.Context, t entity.Task) (entity.Task, error) {
-	ret := _m.Called(ctx, t)
-
-	if len(ret) == 0 {
-		panic("no return value specified for CreateTask")
-	}
-
-	var r0 entity.Task
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, entity.Task) (entity.Task, error)); ok {
-		return rf(ctx, t)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context, entity.Task) entity.Task); ok {
-		r0 = rf(ctx, t)
-	} else {
-		r0 = ret.Get(0).(entity.Task)
-	}
-
-	if rf, ok := ret.Get(1).(func(context.Context, entity.Task) error); ok {
-		r1 = rf(ctx, t)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
 // CreateTaskWithAuditLog provides a mock function with given fields: ctx, t, auditLog
 func (_m *Repository) CreateTaskWithAuditLog(ctx context.Context, t entity.Task, auditLog entity.TaskAuditLog) (entity.Task, error) {
 	ret := _m.Called(ctx, t, auditLog)
@@ -208,24 +162,6 @@ func (_m *Repository) ListTask(ctx context.Context, criteria service.ListTaskCri
 	}
 
 	return r0, r1, r2
-}
-
-// UpdateTask provides a mock function with given fields: ctx, t
-func (_m *Repository) UpdateTask(ctx context.Context, t entity.Task) error {
-	ret := _m.Called(ctx, t)
-
-	if len(ret) == 0 {
-		panic("no return value specified for UpdateTask")
-	}
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, entity.Task) error); ok {
-		r0 = rf(ctx, t)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
 }
 
 // UpdateTaskWithAuditLog provides a mock function with given fields: ctx, t, auditLog

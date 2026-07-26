@@ -23,7 +23,7 @@ type TaskResponse struct {
 	Status      entity.TaskStatus  `json:"status"`
 	Assignee    *string            `json:"assignee"`
 	Version     int16              `json:"version"`
-	AuditLogs   []AuditLogResponse `json:"audit_logs"`
+	AuditLogs   []AuditLogResponse `json:"audit_logs,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -42,9 +42,9 @@ type CreateTaskResponse struct {
 }
 
 type GetTaskByIDRequest struct {
-	ID              entity.ID       `json:"id"`
-	AuditPage       int             `json:"audit_page"`
-	AuditPageSize   int             `json:"audit_page_size"`
+	ID            entity.ID `json:"id"`
+	AuditPage     int       `json:"audit_page"`
+	AuditPageSize int       `json:"audit_page_size"`
 }
 type GetTaskByIDResponse struct {
 	Task            TaskResponse        `json:"task"`

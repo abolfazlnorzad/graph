@@ -113,7 +113,7 @@ graph TD
 Request → Middleware(ErrorHandler, Metrics, Logger)
        → Handler(Validate, Parse, Call Service)
        → Service(Business Logic)
-         → Repository(Create/Get/Update/Delete)
+         → Repository(CreateWithAuditLog/Get/UpdateWithAuditLog/Delete/List)
            → PostgreSQL (with optimistic locking)
          → CacheStore(Set/Get/Delete)
            → Redis (cache-aside pattern)
